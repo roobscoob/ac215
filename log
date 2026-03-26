@@ -1,0 +1,84 @@
+[0xD0] Panel (Dual Addressing, Main Controller) -> Server
+    KeepAlivePacket
+[0xD1] Server -> Panel (Dual Addressing, Main Controller)
+    KeepAliveAckPacket
+[0xD0] Panel (Dual Addressing, Main Controller) -> Server
+    KeepAlivePacket
+[0xD1] Server -> Panel (Dual Addressing, Main Controller)
+    KeepAliveAckPacket
+[0xD0] Panel (Dual Addressing, Main Controller) -> Server
+    KeepAlivePacket
+[0xD1] Server -> Panel (Dual Addressing, Main Controller)
+    KeepAliveAckPacket
+[0xD0] Panel (Dual Addressing, Main Controller) -> Server
+    KeepAlivePacket
+[0xD1] Server -> Panel (Dual Addressing, Main Controller)
+    KeepAliveAckPacket
+[0xD0] Panel (Dual Addressing, Main Controller) -> Server
+    KeepAlivePacket
+[0xD1] Server -> Panel (Dual Addressing, Main Controller)
+    KeepAliveAckPacket
+[0x48] Server -> Panel (Dual Addressing, Main Controller)
+    RequestEvents825Packet
+[0xC9] Panel (Dual Addressing, Main Controller) -> Server
+    AnswerEvents825Packet {
+    status: PanelStatusBlock {
+        main_panel: [34 bytes],
+    },
+    events: [
+        None,
+        None,
+        None,
+        None,
+    ],
+}
+[0xD0] Panel (Dual Addressing, Main Controller) -> Server
+    KeepAlivePacket
+[0xD1] Server -> Panel (Dual Addressing, Main Controller)
+    KeepAliveAckPacket
+[0xD0] Panel (Dual Addressing, Main Controller) -> Server
+    KeepAlivePacket
+[0xD1] Server -> Panel (Dual Addressing, Main Controller)
+    KeepAliveAckPacket
+[0xD0] Panel (Dual Addressing, Main Controller) -> Server
+    KeepAlivePacket
+[0xD1] Server -> Panel (Dual Addressing, Main Controller)
+    KeepAliveAckPacket
+[0xD0] Panel (Dual Addressing, Main Controller) -> Server
+    KeepAlivePacket
+[0xD1] Server -> Panel (Dual Addressing, Main Controller)
+    KeepAliveAckPacket
+[0xD0] Panel (Dual Addressing, Main Controller) -> Server
+    KeepAlivePacket
+[0xD1] Server -> Panel (Dual Addressing, Main Controller)
+    KeepAliveAckPacket
+[0xD0] Panel (Dual Addressing, Main Controller) -> Server
+    KeepAlivePacket
+[0xD1] Server -> Panel (Dual Addressing, Main Controller)
+    KeepAliveAckPacket
+[0x48] Server -> Panel (Dual Addressing, Main Controller)
+    RequestEvents825Packet
+[0xC9] Panel (Dual Addressing, Main Controller) -> Server
+    AnswerEvents825Packet {
+    status: PanelStatusBlock {
+        main_panel: [34 bytes],
+    },
+    events: [
+        None,
+        None,
+        None,
+        None,
+    ],
+}
+[0xD0] Panel (Dual Addressing, Main Controller) -> Server
+    KeepAlivePacket
+[0xD1] Server -> Panel (Dual Addressing, Main Controller)
+    KeepAliveAckPacket
+[0xD0] Panel (Dual Addressing, Main Controller) -> Server
+    KeepAlivePacket
+[0xD1] Server -> Panel (Dual Addressing, Main Controller)
+    KeepAliveAckPacket
+[0xD0] Panel (Dual Addressing, Main Controller) -> Server
+    KeepAlivePacket
+[0xD1] Server -> Panel (Dual Addressing, Main Controller)
+    KeepAliveAckPacket

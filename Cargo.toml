@@ -1,0 +1,18 @@
+[package]
+name = "ac215"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+aes = "0.8.4"
+bitflags = "2"
+chrono = "0.4"
+etherparse = "0.16"
+heapless = "0.9.2"
+hex = "0.4.3"
+pcap-parser = "0.16"
+tokio = { version = "1.50.0", features = ["io-util", "macros", "rt"] }
+
+[[bin]]
+name = "pcapdump"
+path = "src/bin/pcapdump.rs"
