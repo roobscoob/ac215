@@ -11,8 +11,29 @@ etherparse = "0.16"
 heapless = "0.9.2"
 hex = "0.4.3"
 pcap-parser = "0.16"
-tokio = { version = "1.50.0", features = ["io-util", "macros", "rt"] }
+ractor = "0.15"
+tokio = { version = "1.50.0", features = [
+    "io-util",
+    "macros",
+    "net",
+    "rt",
+    "rt-multi-thread",
+    "sync",
+    "time",
+] }
 
 [[bin]]
 name = "pcapdump"
 path = "src/bin/pcapdump.rs"
+
+[[bin]]
+name = "demo"
+path = "src/bin/demo.rs"
+
+[[bin]]
+name = "demo-panel"
+path = "src/bin/demo-panel.rs"
+
+[[bin]]
+name = "proxy"
+path = "src/bin/proxy.rs"

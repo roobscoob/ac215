@@ -36,20 +36,20 @@ fn format_packet(header: &Ac215Header, payload: &[u8]) -> String {
 
     let body = match header.command_id() {
         0x6B => "    RequestFirmVer825Packet".to_string(),
-        0xEB => match AnswerFirmVer825Packet::from_bytes(payload) {
+        0xEB => match AnswerFirmVer825Packet::from_bytes(header, payload) {
             Ok(pkt) => format!("    {:#?}", pkt),
             Err(e) => format!("    AnswerFirmVer825Packet {{ error: {} }}", e),
         },
-        0x62 => match UpdateClockPacket::from_bytes(payload) {
+        0x62 => match UpdateClockPacket::from_bytes(header, payload) {
             Ok(pkt) => format!("    {:#?}", pkt),
             Err(e) => format!("    UpdateClockPacket {{ error: {} }}", e),
         },
         0x48 => "    RequestEvents825Packet".to_string(),
-        0xC9 => match AnswerEvents825Packet::from_bytes(payload) {
+        0xC9 => match AnswerEvents825Packet::from_bytes(header, payload) {
             Ok(pkt) => format!("    {:#?}", pkt),
             Err(e) => format!("    AnswerEvents825Packet {{ error: {} }}", e),
         },
-        0xD4 => match SendLogMessagePacket::from_bytes(payload) {
+        0xD4 => match SendLogMessagePacket::from_bytes(header, payload) {
             Ok(pkt) => format!("    {:#?}", pkt),
             Err(e) => format!("    SendLogMessagePacket {{ error: {} }}", e),
         },
@@ -190,7 +190,8 @@ async fn drain_frames(buf: &mut Vec<u8>, direction: Ac215PacketDirection, cipher
         }
 
         let mut cursor = Cursor::new(buf.as_slice());
-        match Ac215Header::parse_frame(direction, cipher.clone(), &mut cursor, ChecksumMode::Auto)
+        let no_overrides = std::collections::HashMap::new();
+        match Ac215Header::parse_frame(direction, cipher.clone(), &mut cursor, ChecksumMode::Auto, &no_overrides)
             .await
         {
             Ok((header, payload)) => {

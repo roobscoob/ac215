@@ -6,6 +6,7 @@ pub struct Ac215Address {
     lower: u8,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Ac215AddressMode {
     Single,
     Dual,
@@ -22,6 +23,25 @@ impl Ac215Address {
         upper: 0x01,
         lower: 0x01,
     };
+
+    pub fn panel_main_controller(mode: Ac215AddressMode) -> Self {
+        let upper = match mode {
+            Ac215AddressMode::Single => 0x02,
+            Ac215AddressMode::Dual => 0x03,
+        };
+
+        Self { upper, lower: 0x01 }
+    }
+
+    pub fn panel_extension_board(mode: Ac215AddressMode, slot: u8, r#type: u8) -> Self {
+        assert!((1..=4).contains(&(mode as u8)));
+        assert!((2..=5).contains(&slot));
+        assert!(matches!(r#type, 0x02 | 0x03));
+
+        let upper = ((mode as u8) << 4) | r#type;
+
+        Self { upper, lower: slot }
+    }
 
     pub fn parse(upper: u8, lower: u8) -> Option<Self> {
         match (lower, upper) {

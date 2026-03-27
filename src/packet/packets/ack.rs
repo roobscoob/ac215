@@ -2,18 +2,19 @@ use std::convert::Infallible;
 
 use crate::packet::Ac215Packet;
 
-pub struct RequestFirmVer825Packet;
+/// Ack (0x80) — empty acknowledgement packet.
+pub struct AckPacket;
 
-impl Ac215Packet for RequestFirmVer825Packet {
+impl Ac215Packet for AckPacket {
     type Error = Infallible;
 
-    const PACKET_ID: Option<u8> = Some(0x6B);
+    const PACKET_ID: Option<u8> = Some(0x80);
 
     fn packet_id(&self) -> u8 {
-        0x6B
+        0x80
     }
 
-    fn into_bytes(self, out: &mut [u8; 467]) -> u16 {
+    fn into_bytes(self, _out: &mut [u8; 467]) -> u16 {
         0
     }
 

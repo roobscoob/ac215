@@ -201,6 +201,8 @@ const MIN_PAYLOAD_SIZE: usize = EVENT_OFFSET + EVENT_COUNT * EVENT_SLOT_SIZE;
 impl Ac215Packet for AnswerEvents825Packet {
     type Error = AnswerEventsError;
 
+    const PACKET_ID: Option<u8> = Some(0xC9);
+
     fn packet_id(&self) -> u8 {
         0xC9
     }
@@ -229,7 +231,7 @@ impl Ac215Packet for AnswerEvents825Packet {
         MIN_PAYLOAD_SIZE as u16
     }
 
-    fn from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
+    fn from_bytes(_header: &crate::packet::header::Ac215Header, bytes: &[u8]) -> Result<Self, Self::Error> {
         if bytes.len() < MIN_PAYLOAD_SIZE {
             return Err(AnswerEventsError::TooShort {
                 expected: MIN_PAYLOAD_SIZE,
@@ -287,6 +289,24 @@ mod tests {
     use chrono::{Datelike, Timelike};
 
     use super::*;
+    use crate::packet::address::Ac215Address;
+    use crate::packet::direction::Ac215PacketDirection;
+    use crate::packet::header::{Ac215Header, Ac215TransactionId};
+    use crate::packet::header::EventFlag;
+
+    fn dummy_header() -> Ac215Header {
+        Ac215Header::new(
+            Ac215PacketDirection::ToPanel,
+            Ac215Address::SERVER,
+            Ac215Address::SERVER,
+            Ac215TransactionId::from_byte(0),
+            0,
+            0,
+            EventFlag::Unset,
+            crate::packet::header::ChecksumMode::Auto,
+        )
+        .unwrap()
+    }
 
     #[test]
     fn datetime_round_trip() {
@@ -328,7 +348,7 @@ mod tests {
     fn parse_empty_response() {
         // All zeros — status block present, no events
         let payload = [0u8; MIN_PAYLOAD_SIZE];
-        let pkt = AnswerEvents825Packet::from_bytes(&payload).unwrap();
+        let pkt = AnswerEvents825Packet::from_bytes(&dummy_header(), &payload).unwrap();
         assert!(pkt.events.iter().all(|e| e.is_none()));
     }
 
@@ -354,7 +374,7 @@ mod tests {
         payload[333] = 0x03; // event source (reader 3)
         payload[334] = 0x01; // additional data
 
-        let pkt = AnswerEvents825Packet::from_bytes(&payload).unwrap();
+        let pkt = AnswerEvents825Packet::from_bytes(&dummy_header(), &payload).unwrap();
 
         let ev = pkt.events[0].as_ref().unwrap();
         assert_eq!(ev.event_number, 66);
@@ -392,12 +412,12 @@ mod tests {
         payload[333] = 0x03;
         payload[334] = 0xFF; // make it non-uniform
 
-        let pkt = AnswerEvents825Packet::from_bytes(&payload).unwrap();
+        let pkt = AnswerEvents825Packet::from_bytes(&dummy_header(), &payload).unwrap();
         assert!(pkt.events[0].is_some());
 
         let mut out = [0u8; 467];
         let len = pkt.clone().into_bytes(&mut out);
-        let pkt2 = AnswerEvents825Packet::from_bytes(&out[..len as usize]).unwrap();
+        let pkt2 = AnswerEvents825Packet::from_bytes(&dummy_header(), &out[..len as usize]).unwrap();
 
         let ev1 = pkt.events[0].as_ref().unwrap();
         let ev2 = pkt2.events[0].as_ref().unwrap();
@@ -408,7 +428,7 @@ mod tests {
 
     #[test]
     fn too_short() {
-        let err = AnswerEvents825Packet::from_bytes(&[0u8; 100]).unwrap_err();
+        let err = AnswerEvents825Packet::from_bytes(&dummy_header(), &[0u8; 100]).unwrap_err();
         assert!(matches!(err, AnswerEventsError::TooShort { .. }));
     }
 }

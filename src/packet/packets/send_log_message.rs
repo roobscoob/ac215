@@ -93,6 +93,8 @@ impl fmt::Display for SendLogMessageError {
 impl Ac215Packet for SendLogMessagePacket {
     type Error = SendLogMessageError;
 
+    const PACKET_ID: Option<u8> = Some(0xD4);
+
     fn packet_id(&self) -> u8 {
         0xD4
     }
@@ -107,7 +109,7 @@ impl Ac215Packet for SendLogMessagePacket {
         (2 + len) as u16
     }
 
-    fn from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
+    fn from_bytes(_header: &crate::packet::header::Ac215Header, bytes: &[u8]) -> Result<Self, Self::Error> {
         if bytes.len() < 2 {
             return Err(SendLogMessageError::TooShort {
                 expected: 2,
@@ -139,6 +141,24 @@ impl Ac215Packet for SendLogMessagePacket {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::packet::address::Ac215Address;
+    use crate::packet::direction::Ac215PacketDirection;
+    use crate::packet::header::{Ac215Header, Ac215TransactionId};
+    use crate::packet::header::EventFlag;
+
+    fn dummy_header() -> Ac215Header {
+        Ac215Header::new(
+            Ac215PacketDirection::ToPanel,
+            Ac215Address::SERVER,
+            Ac215Address::SERVER,
+            Ac215TransactionId::from_byte(0),
+            0,
+            0,
+            EventFlag::Unset,
+            crate::packet::header::ChecksumMode::Auto,
+        )
+        .unwrap()
+    }
 
     #[test]
     fn parse_log_message() {
@@ -147,7 +167,7 @@ mod tests {
         payload[1] = 0x02; // Info
         payload[2..14].copy_from_slice(b"Hello, panel");
 
-        let pkt = SendLogMessagePacket::from_bytes(&payload).unwrap();
+        let pkt = SendLogMessagePacket::from_bytes(&dummy_header(), &payload).unwrap();
 
         assert_eq!(pkt.destination, LogDestination::LOG | LogDestination::EVENT);
         assert_eq!(pkt.severity, LogSeverity::Info);
@@ -169,7 +189,7 @@ mod tests {
         let mut out = [0u8; 467];
         let len = pkt.clone().into_bytes(&mut out);
 
-        let pkt2 = SendLogMessagePacket::from_bytes(&out[..len as usize]).unwrap();
+        let pkt2 = SendLogMessagePacket::from_bytes(&dummy_header(), &out[..len as usize]).unwrap();
         assert_eq!(pkt2.destination, LogDestination::EVENT);
         assert_eq!(pkt2.severity, LogSeverity::Warning);
         assert_eq!(pkt2.message.as_str(), "test message");
@@ -177,14 +197,14 @@ mod tests {
 
     #[test]
     fn too_short() {
-        let err = SendLogMessagePacket::from_bytes(&[0x01]).unwrap_err();
+        let err = SendLogMessagePacket::from_bytes(&dummy_header(), &[0x01]).unwrap_err();
         assert!(matches!(err, SendLogMessageError::TooShort { .. }));
     }
 
     #[test]
     fn empty_message() {
         let payload = [0x01, 0x00]; // LOG, Trace, no message
-        let pkt = SendLogMessagePacket::from_bytes(&payload).unwrap();
+        let pkt = SendLogMessagePacket::from_bytes(&dummy_header(), &payload).unwrap();
         assert_eq!(pkt.message.as_str(), "");
     }
 }

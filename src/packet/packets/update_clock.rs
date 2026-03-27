@@ -55,6 +55,8 @@ impl UpdateClockPacket {
 impl Ac215Packet for UpdateClockPacket {
     type Error = UpdateClockError;
 
+    const PACKET_ID: Option<u8> = Some(0x62);
+
     fn packet_id(&self) -> u8 {
         0x62
     }
@@ -70,7 +72,7 @@ impl Ac215Packet for UpdateClockPacket {
         7
     }
 
-    fn from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
+    fn from_bytes(_header: &crate::packet::header::Ac215Header, bytes: &[u8]) -> Result<Self, Self::Error> {
         if bytes.len() < 7 {
             return Err(UpdateClockError::TooShort {
                 expected: 7,
@@ -93,6 +95,24 @@ impl Ac215Packet for UpdateClockPacket {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::packet::address::Ac215Address;
+    use crate::packet::direction::Ac215PacketDirection;
+    use crate::packet::header::{Ac215Header, Ac215TransactionId};
+    use crate::packet::header::EventFlag;
+
+    fn dummy_header() -> Ac215Header {
+        Ac215Header::new(
+            Ac215PacketDirection::ToPanel,
+            Ac215Address::SERVER,
+            Ac215Address::SERVER,
+            Ac215TransactionId::from_byte(0),
+            0,
+            0,
+            EventFlag::Unset,
+            crate::packet::header::ChecksumMode::Auto,
+        )
+        .unwrap()
+    }
 
     #[test]
     fn round_trip() {
@@ -111,7 +131,7 @@ mod tests {
         assert_eq!(len, 7);
         assert_eq!(&out[..7], &[26, 3, 4, 26, 14, 30, 45]);
 
-        let pkt2 = UpdateClockPacket::from_bytes(&out[..len as usize]).unwrap();
+        let pkt2 = UpdateClockPacket::from_bytes(&dummy_header(), &out[..len as usize]).unwrap();
         assert_eq!(pkt2, pkt);
     }
 
@@ -138,7 +158,7 @@ mod tests {
 
     #[test]
     fn too_short() {
-        let err = UpdateClockPacket::from_bytes(&[0u8; 3]).unwrap_err();
+        let err = UpdateClockPacket::from_bytes(&dummy_header(), &[0u8; 3]).unwrap_err();
         assert!(matches!(err, UpdateClockError::TooShort { .. }));
     }
 
