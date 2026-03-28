@@ -1,0 +1,16 @@
+meta {
+  name: Delete webhook
+  type: http
+  seq: 6
+}
+
+delete {
+  url: http://{{HOSTNAME}}:8181/v1/webhooks/{{WEBHOOK_ID}}
+  body: none
+  auth: inherit
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

@@ -1,0 +1,28 @@
+meta {
+  name: Manually control outputs
+  type: http
+  seq: 3
+}
+
+post {
+  url: http://{{HOSTNAME}}:8181/v1/panel/outputs
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "operations": [
+      {
+        "output_id": 1,
+        "operation": "pulse",
+        "duration": 1
+      }
+    ]
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

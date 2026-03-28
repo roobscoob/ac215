@@ -159,7 +159,10 @@ impl Ac215Packet for ManualOutputPacket {
         }
     }
 
-    fn from_bytes(_header: &crate::packet::header::Ac215Header, bytes: &[u8]) -> Result<Self, Self::Error> {
+    fn from_bytes(
+        _header: &crate::packet::header::Ac215Header,
+        bytes: &[u8],
+    ) -> Result<Self, Self::Error> {
         let len = bytes.len();
 
         let (variant, count) = if len >= 129 {
@@ -192,8 +195,8 @@ mod tests {
     use super::*;
     use crate::packet::address::Ac215Address;
     use crate::packet::direction::Ac215PacketDirection;
-    use crate::packet::header::{Ac215Header, Ac215TransactionId};
     use crate::packet::header::EventFlag;
+    use crate::packet::header::{Ac215Header, Ac215TransactionId};
 
     fn dummy_header() -> Ac215Header {
         Ac215Header::new(

@@ -20,6 +20,16 @@ pub struct Ac215TransactionId {
 }
 
 impl Ac215TransactionId {
+    pub fn zero() -> Self {
+        Self { value: 0 }
+    }
+
+    pub fn next(self) -> Self {
+        Self {
+            value: self.value.wrapping_add(1),
+        }
+    }
+
     pub(crate) fn from_byte(byte: u8) -> Self {
         Self { value: byte }
     }
@@ -31,11 +41,17 @@ impl Ac215TransactionId {
 
 impl Debug for Ac215TransactionId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Ac215TransactionId({:#02})", self.value)
+        write!(f, "Ac215TransactionId(0x{:02X})", self.value)
     }
 }
 
-#[derive(Debug)]
+impl std::fmt::Display for Ac215TransactionId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "0x{:02X}", self.value)
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Ac215Header {
     direction: Ac215PacketDirection,
     source: Ac215Address,
@@ -128,10 +144,11 @@ fn raw_size_for(data_length: u16, event_flag: EventFlag) -> Option<u8> {
             _ => None,
         }
     } else {
-        if data_length > 250 {
+        let raw_size = pad16(data_length + 6) - 5;
+        if raw_size > 250 {
             None
         } else {
-            Some(data_length as u8)
+            Some(raw_size as u8)
         }
     }
 }
@@ -343,8 +360,17 @@ impl Ac215Header {
         self.transaction_id
     }
 
+    pub fn raw_size(&self) -> u8 {
+        self.raw_size
+    }
+
     pub fn command_id(&self) -> u8 {
         self.command_id
+    }
+
+    pub fn with_transaction_id(mut self, id: Ac215TransactionId) -> Self {
+        self.transaction_id = id;
+        self
     }
 
     pub fn data_length(&self) -> usize {

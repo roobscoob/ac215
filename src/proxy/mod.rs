@@ -1,15 +1,23 @@
 mod coordinator;
+pub mod handlers;
+pub mod interceptor;
 pub mod message;
+pub mod pipeline;
 mod reader;
+mod recording_reader;
+mod transaction;
 mod writer;
 
 pub use coordinator::CoordinatorActor;
+pub use interceptor::{InterceptorHandle, Transaction};
 pub use message::{CoordinatorMsg, Side, WriterMsg};
 pub use reader::spawn_reader;
 pub use writer::WriterActor;
 
 use std::net::SocketAddr;
+use std::sync::{Arc, Mutex};
 
+use log::{error, info};
 use ractor::Actor;
 use tokio::net::{TcpListener, TcpStream};
 
@@ -32,43 +40,118 @@ use writer::WriterArgs;
 ///
 /// Four reader tasks and four writer actors relay frames through
 /// a central coordinator actor that logs and forwards traffic.
+///
+/// On disconnect from either side, the proxy tears down all connections
+/// and re-runs the startup sequence.
 pub struct Proxy {
-    coordinator_handle: tokio::task::JoinHandle<()>,
+    listen_addr: SocketAddr,
+    panel_addr: SocketAddr,
+    cipher: Cipher,
+    checksum_mode: ChecksumMode,
+    handle: InterceptorHandle,
+    handlers: Vec<Arc<Mutex<dyn pipeline::FrameHandler>>>,
+    on_listening: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
 }
 
 impl Proxy {
-    pub async fn start(
+    pub fn new(
         listen_addr: SocketAddr,
         panel_addr: SocketAddr,
         cipher: Cipher,
         checksum_mode: ChecksumMode,
-    ) -> std::io::Result<Self> {
+        handlers: Vec<Arc<Mutex<dyn pipeline::FrameHandler>>>,
+    ) -> Self {
+        Self {
+            listen_addr,
+            panel_addr,
+            cipher,
+            checksum_mode,
+            handle: InterceptorHandle::empty(),
+            handlers,
+            on_listening: Mutex::new(None),
+        }
+    }
+
+    /// Get a handle for sending commands to the proxy.
+    ///
+    /// The handle remains valid across resets — its inner coordinator ref
+    /// is swapped each cycle.
+    pub fn handle(&self) -> InterceptorHandle {
+        self.handle.clone()
+    }
+
+    /// Returns a oneshot receiver that fires when the proxy first starts
+    /// listening for the server connection.
+    pub fn on_listening(&self) -> tokio::sync::oneshot::Receiver<()> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        *self.on_listening.lock().unwrap() = Some(tx);
+        rx
+    }
+
+    /// Run the proxy in a loop, resetting on disconnect.
+    ///
+    /// Each cycle establishes all four connections and spawns actors.
+    /// When either side disconnects, everything is torn down and the cycle
+    /// restarts. The [`InterceptorHandle`] from [`handle()`] stays valid
+    /// across resets.
+    pub async fn run(&self) -> ! {
+        loop {
+            match self.cycle().await {
+                Ok(coordinator_handle) => {
+                    let _ = coordinator_handle.await;
+                    info!("Disconnected, resetting...");
+                }
+                Err(e) => {
+                    error!("Connection failed: {e}, retrying...");
+                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                }
+            }
+        }
+    }
+
+    /// A single connect → run → disconnect cycle.
+    async fn cycle(&self) -> std::io::Result<tokio::task::JoinHandle<()>> {
+        let listen_addr = self.listen_addr;
+        let panel_addr = self.panel_addr;
+        let cipher = &self.cipher;
+        let checksum_mode = self.checksum_mode;
+
         // --- Phase 1: Accept the server's primary connection ---
         let server_listener = TcpListener::bind(listen_addr).await?;
-        println!("[proxy] Listening for server on {listen_addr}...");
+        info!("Listening for server on {listen_addr}...");
+
+        if let Some(tx) = self.on_listening.lock().unwrap().take() {
+            let _ = tx.send(());
+        }
 
         let (server_primary, server_peer) = server_listener.accept().await?;
-        println!("[proxy] Server connected from {server_peer}");
+        info!("Server connected from {server_peer}");
 
         // --- Phase 2: Connect to the real panel + listen for its async callback ---
         let panel_async_bind = SocketAddr::new("0.0.0.0".parse().unwrap(), panel_addr.port() + 1);
         let panel_async_listener = TcpListener::bind(panel_async_bind).await?;
-        println!("[proxy] Listening for panel async on {panel_async_bind}");
+        info!("Listening for panel async on {panel_async_bind}");
 
-        println!("[proxy] Connecting to panel at {panel_addr}...");
+        info!("Connecting to panel at {panel_addr}...");
         let panel_primary = TcpStream::connect(panel_addr).await?;
-        println!("[proxy] Panel primary connected");
+        info!("Panel primary connected");
 
-        // --- Phase 3: Accept the panel's async connection ---
-        println!("[proxy] Waiting for panel async callback...");
-        let (panel_async, panel_async_peer) = panel_async_listener.accept().await?;
-        println!("[proxy] Panel async connected from {panel_async_peer}");
+        // --- Phase 3: Accept the panel's async connection (2s timeout) ---
+        info!("Waiting for panel async callback...");
+        let (panel_async, panel_async_peer) = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            panel_async_listener.accept(),
+        )
+        .await
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "panel async callback timed out (2s)"))?
+        ?;
+        info!("Panel async connected from {panel_async_peer}");
 
         // --- Phase 4: Connect to the server's async listener ---
         let server_async_addr = SocketAddr::new(server_peer.ip(), listen_addr.port() + 1);
-        println!("[proxy] Connecting to server async at {server_async_addr}...");
+        info!("Connecting to server async at {server_async_addr}...");
         let server_async = TcpStream::connect(server_async_addr).await?;
-        println!("[proxy] Server async connected");
+        info!("Server async connected");
 
         // --- Split all four streams ---
         let (sp_read, sp_write) = server_primary.into_split();
@@ -80,7 +163,10 @@ impl Proxy {
         let (panel_primary_w, _) = Actor::spawn(
             Some("panel-primary-writer".into()),
             WriterActor,
-            WriterArgs { writer: pp_write, cipher: cipher.clone() },
+            WriterArgs {
+                writer: pp_write,
+                cipher: cipher.clone(),
+            },
         )
         .await
         .expect("failed to spawn panel primary writer");
@@ -88,7 +174,10 @@ impl Proxy {
         let (panel_async_w, _) = Actor::spawn(
             Some("panel-async-writer".into()),
             WriterActor,
-            WriterArgs { writer: pa_write, cipher: cipher.clone() },
+            WriterArgs {
+                writer: pa_write,
+                cipher: cipher.clone(),
+            },
         )
         .await
         .expect("failed to spawn panel async writer");
@@ -96,7 +185,10 @@ impl Proxy {
         let (server_primary_w, _) = Actor::spawn(
             Some("server-primary-writer".into()),
             WriterActor,
-            WriterArgs { writer: sp_write, cipher: cipher.clone() },
+            WriterArgs {
+                writer: sp_write,
+                cipher: cipher.clone(),
+            },
         )
         .await
         .expect("failed to spawn server primary writer");
@@ -104,7 +196,10 @@ impl Proxy {
         let (server_async_w, _) = Actor::spawn(
             Some("server-async-writer".into()),
             WriterActor,
-            WriterArgs { writer: sa_write, cipher: cipher.clone() },
+            WriterArgs {
+                writer: sa_write,
+                cipher: cipher.clone(),
+            },
         )
         .await
         .expect("failed to spawn server async writer");
@@ -118,6 +213,7 @@ impl Proxy {
                 panel_async: panel_async_w,
                 server_primary: server_primary_w,
                 server_async: server_async_w,
+                handlers: self.handlers.clone(),
             },
         )
         .await
@@ -125,38 +221,46 @@ impl Proxy {
 
         // --- Spawn reader tasks ---
         spawn_reader(
-            sp_read, cipher.clone(),
-            Ac215PacketDirection::ToPanel, checksum_mode,
-            Side::Server, Channel::Primary,
+            sp_read,
+            cipher.clone(),
+            Ac215PacketDirection::ToPanel,
+            checksum_mode,
+            Side::Server,
+            Channel::Primary,
             coordinator.clone(),
         );
         spawn_reader(
-            sa_read, cipher.clone(),
-            Ac215PacketDirection::ToPanel, ChecksumMode::ForceModern,
-            Side::Server, Channel::Async,
+            sa_read,
+            cipher.clone(),
+            Ac215PacketDirection::ToPanel,
+            ChecksumMode::ForceModern,
+            Side::Server,
+            Channel::Async,
             coordinator.clone(),
         );
         spawn_reader(
-            pp_read, cipher.clone(),
-            Ac215PacketDirection::FromPanel, checksum_mode,
-            Side::Panel, Channel::Primary,
+            pp_read,
+            cipher.clone(),
+            Ac215PacketDirection::FromPanel,
+            checksum_mode,
+            Side::Panel,
+            Channel::Primary,
             coordinator.clone(),
         );
         spawn_reader(
-            pa_read, cipher.clone(),
-            Ac215PacketDirection::FromPanel, ChecksumMode::ForceModern,
-            Side::Panel, Channel::Async,
-            coordinator,
+            pa_read,
+            cipher.clone(),
+            Ac215PacketDirection::FromPanel,
+            ChecksumMode::ForceModern,
+            Side::Panel,
+            Channel::Async,
+            coordinator.clone(),
         );
 
-        println!("[proxy] All actors running");
+        info!("All actors running");
 
-        Ok(Self { coordinator_handle })
-    }
+        self.handle.set_coordinator(coordinator);
 
-    /// Block until the proxy shuts down (due to a disconnect on either side).
-    pub async fn run(self) {
-        let _ = self.coordinator_handle.await;
-        println!("[proxy] Shut down");
+        Ok(coordinator_handle)
     }
 }

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use log::info;
 use tokio::io::AsyncWriteExt;
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::{TcpListener, TcpStream};
@@ -42,24 +43,24 @@ impl Panel {
         checksum_mode: ChecksumMode,
     ) -> std::io::Result<Self> {
         // 1. Listen on the primary port
-        println!("[panel] Binding primary listener on {}", listen_addr);
+        info!("Binding primary listener on {}", listen_addr);
         let primary_listener = TcpListener::bind(listen_addr).await?;
 
         // 2. Wait for the server to connect
-        println!("[panel] Waiting for server to connect...");
+        info!("Waiting for server to connect...");
         let (primary_stream, server_peer) = primary_listener.accept().await?;
-        println!("[panel] Server connected from {}", server_peer);
+        info!("Server connected from {}", server_peer);
 
         // 3. Connect back to the server on port + 1
         let async_addr = SocketAddr::new(server_peer.ip(), listen_addr.port() + 1);
-        println!("[panel] Connecting async channel to {}...", async_addr);
+        info!("Connecting async channel to {}...", async_addr);
         let async_stream = TcpStream::connect(async_addr).await?;
-        println!("[panel] Async channel connected");
+        info!("Async channel connected");
 
         // Split both streams
         let (primary_reader, primary_writer) = primary_stream.into_split();
         let (async_reader, async_writer) = async_stream.into_split();
-        println!("[panel] Both channels established, spawning receive loops");
+        info!("Both channels established, spawning receive loops");
 
         let (unsolicited_tx, unsolicited_rx) = mpsc::channel(64);
 

@@ -14,6 +14,7 @@ use ac215::{
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
+    env_logger::init();
     let args: Vec<String> = std::env::args().collect();
     let addr: SocketAddr = args
         .get(1)

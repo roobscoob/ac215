@@ -1,6 +1,7 @@
 pub mod address;
 pub mod direction;
 pub mod header;
+pub mod named_id;
 pub mod packets;
 pub mod pre_serialized;
 pub mod test;

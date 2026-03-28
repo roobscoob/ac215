@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use log::{info, warn};
 use tokio::io::AsyncWriteExt;
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::{TcpListener, TcpStream};
@@ -48,23 +49,23 @@ impl Server {
     ) -> std::io::Result<Self> {
         // 1. Listen on port + 1 before connecting, so it's ready when the panel tries
         let async_listen_addr = SocketAddr::new("0.0.0.0".parse().unwrap(), panel_addr.port() + 1);
-        println!("[server] Binding async listener on {}", async_listen_addr);
+        info!("Binding async listener on {}", async_listen_addr);
         let async_listener = TcpListener::bind(async_listen_addr).await?;
 
         // 2. Connect to the panel's primary port
-        println!("[server] Connecting to panel at {}...", panel_addr);
+        info!("Connecting to panel at {}...", panel_addr);
         let primary_stream = TcpStream::connect(panel_addr).await?;
-        println!("[server] Primary channel connected");
+        info!("Primary channel connected");
 
         // 3. Accept the panel's async connection (panel connects as soon as it sees us)
-        println!("[server] Waiting for panel to connect on async channel...");
+        info!("Waiting for panel to connect on async channel...");
         let (async_stream, async_peer) = async_listener.accept().await?;
-        println!("[server] Async channel connected from {}", async_peer);
+        info!("Async channel connected from {}", async_peer);
 
         // Split both streams
         let (primary_reader, primary_writer) = primary_stream.into_split();
         let (async_reader, async_writer) = async_stream.into_split();
-        println!("[server] Both channels established, spawning receive loops");
+        info!("Both channels established, spawning receive loops");
 
         let pending: PendingMap = Arc::new(Mutex::new(HashMap::new()));
         let checksum_overrides: ChecksumOverrides = Arc::new(Mutex::new(HashMap::new()));
@@ -222,7 +223,7 @@ impl Server {
                         }
                     }
                     Err(e) => {
-                        println!("[server] Error parsing frame: {:?}", e);
+                        warn!("Error parsing frame: {:?}", e);
                         break;
                     }
                 }

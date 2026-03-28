@@ -102,6 +102,72 @@ impl Ac215Address {
     }
 }
 
+/// Pre-built direction + source + destination for common addressing patterns.
+#[derive(Debug, Clone, Copy)]
+pub struct Addressing {
+    pub direction: super::direction::Ac215PacketDirection,
+    pub source: Ac215Address,
+    pub destination: Ac215Address,
+}
+
+/// Builder that captures the address mode before choosing a target.
+#[derive(Clone, Copy)]
+pub struct AddressingBuilder {
+    mode: Ac215AddressMode,
+}
+
+impl Addressing {
+    pub fn single() -> AddressingBuilder {
+        AddressingBuilder {
+            mode: Ac215AddressMode::Single,
+        }
+    }
+
+    pub fn dual() -> AddressingBuilder {
+        AddressingBuilder {
+            mode: Ac215AddressMode::Dual,
+        }
+    }
+
+    pub fn with(mode: Ac215AddressMode) -> AddressingBuilder {
+        AddressingBuilder { mode }
+    }
+}
+
+impl AddressingBuilder {
+    pub fn to_panel(self) -> Addressing {
+        Addressing {
+            direction: super::direction::Ac215PacketDirection::ToPanel,
+            source: Ac215Address::SERVER,
+            destination: Ac215Address::panel_main_controller(self.mode),
+        }
+    }
+
+    pub fn to_extension(self, slot: u8, r#type: u8) -> Addressing {
+        Addressing {
+            direction: super::direction::Ac215PacketDirection::ToPanel,
+            source: Ac215Address::SERVER,
+            destination: Ac215Address::panel_extension_board(self.mode, slot, r#type),
+        }
+    }
+
+    pub fn from_panel(self) -> Addressing {
+        Addressing {
+            direction: super::direction::Ac215PacketDirection::FromPanel,
+            source: Ac215Address::panel_main_controller(self.mode),
+            destination: Ac215Address::SERVER,
+        }
+    }
+
+    pub fn from_extension(self, slot: u8, r#type: u8) -> Addressing {
+        Addressing {
+            direction: super::direction::Ac215PacketDirection::FromPanel,
+            source: Ac215Address::panel_extension_board(self.mode, slot, r#type),
+            destination: Ac215Address::SERVER,
+        }
+    }
+}
+
 impl Debug for Ac215Address {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.is_server() {

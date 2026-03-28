@@ -7,14 +7,14 @@ use ac215::{
         direction::Ac215PacketDirection,
         header::{Ac215Header, ChecksumMode},
         packets::{
-            answer_events_825::AnswerEvents825Packet, answer_firm_ver::AnswerFirmVer825Packet,
-            send_log_message::SendLogMessagePacket, update_clock::UpdateClockPacket,
+            answer_firm_ver::AnswerFirmVer825Packet, send_log_message::SendLogMessagePacket,
+            update_clock::UpdateClockPacket,
         },
     },
 };
 use etherparse::{SlicedPacket, TransportSlice};
 use pcap_parser::traits::PcapReaderIterator;
-use pcap_parser::{PcapNGReader, PcapError};
+use pcap_parser::{PcapError, PcapNGReader};
 
 type FlowKey = ([u8; 4], u16, [u8; 4], u16);
 
@@ -45,10 +45,6 @@ fn format_packet(header: &Ac215Header, payload: &[u8]) -> String {
             Err(e) => format!("    UpdateClockPacket {{ error: {} }}", e),
         },
         0x48 => "    RequestEvents825Packet".to_string(),
-        0xC9 => match AnswerEvents825Packet::from_bytes(header, payload) {
-            Ok(pkt) => format!("    {:#?}", pkt),
-            Err(e) => format!("    AnswerEvents825Packet {{ error: {} }}", e),
-        },
         0xD4 => match SendLogMessagePacket::from_bytes(header, payload) {
             Ok(pkt) => format!("    {:#?}", pkt),
             Err(e) => format!("    SendLogMessagePacket {{ error: {} }}", e),
@@ -113,8 +109,7 @@ async fn main() {
                 {
                     if let Some((key, tcp_payload)) = extract_tcp(&epb.data, port_filter) {
                         if !tcp_payload.is_empty() {
-                            let direction =
-                                flow_direction(key.1, key.3);
+                            let direction = flow_direction(key.1, key.3);
                             let stream = streams.entry(key).or_insert_with(|| TcpStream {
                                 buf: Vec::new(),
                                 direction,
@@ -141,10 +136,7 @@ async fn main() {
     }
 }
 
-fn extract_tcp<'a>(
-    eth_data: &'a [u8],
-    port_filter: Option<u16>,
-) -> Option<(FlowKey, &'a [u8])> {
+fn extract_tcp<'a>(eth_data: &'a [u8], port_filter: Option<u16>) -> Option<(FlowKey, &'a [u8])> {
     let parsed = SlicedPacket::from_ethernet(eth_data).ok()?;
 
     let tcp = match parsed.transport? {
@@ -153,9 +145,7 @@ fn extract_tcp<'a>(
     };
 
     let (src_ip, dst_ip) = match parsed.net? {
-        etherparse::NetSlice::Ipv4(ipv4) => {
-            (ipv4.header().source(), ipv4.header().destination())
-        }
+        etherparse::NetSlice::Ipv4(ipv4) => (ipv4.header().source(), ipv4.header().destination()),
         _ => return None,
     };
 
@@ -191,8 +181,14 @@ async fn drain_frames(buf: &mut Vec<u8>, direction: Ac215PacketDirection, cipher
 
         let mut cursor = Cursor::new(buf.as_slice());
         let no_overrides = std::collections::HashMap::new();
-        match Ac215Header::parse_frame(direction, cipher.clone(), &mut cursor, ChecksumMode::Auto, &no_overrides)
-            .await
+        match Ac215Header::parse_frame(
+            direction,
+            cipher.clone(),
+            &mut cursor,
+            ChecksumMode::Auto,
+            &no_overrides,
+        )
+        .await
         {
             Ok((header, payload)) => {
                 let consumed = cursor.position() as usize;

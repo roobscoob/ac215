@@ -1,3 +1,4 @@
+use log::error;
 use ractor::{Actor, ActorProcessingErr, ActorRef};
 use tokio::io::AsyncWriteExt;
 use tokio::net::tcp::OwnedWriteHalf;
@@ -44,7 +45,7 @@ impl Actor for WriterActor {
             WriterMsg::Write { header, payload } => {
                 let frame_bytes = header.into_frame(state.cipher.clone(), &payload);
                 if let Err(e) = state.writer.write_all(&frame_bytes).await {
-                    println!("[writer] Write error: {e}");
+                    error!("Write error: {e}");
                     myself.stop(Some("write error".to_string()));
                 }
             }
