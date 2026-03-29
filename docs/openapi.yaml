@@ -324,6 +324,9 @@ paths:
                 master_user:
                   type: boolean
                   default: false
+                notes:
+                  type: string
+                  default: ""
             examples:
               basic:
                 value:
@@ -387,7 +390,7 @@ paths:
       summary: Update user
       description: >
         Update one or more fields on an employee. If access-related fields
-        (access_group, pin, master_user) are changed and the user has a panel
+        (access_group, pin, master_user) change and the user has a panel
         slot, a UserData download is automatically queued.
       parameters:
         - name: id
@@ -414,6 +417,8 @@ paths:
                   type: string
                 master_user:
                   type: boolean
+                notes:
+                  type: string
       responses:
         "200":
           description: User updated.
@@ -744,6 +749,8 @@ components:
           description: "1=Master, 2=Recurse Center Access Group, 1000000=Unauthorized."
         master_user:
           type: boolean
+        notes:
+          type: string
 
     Card:
       type: object

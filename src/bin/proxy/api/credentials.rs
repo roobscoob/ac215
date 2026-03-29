@@ -103,6 +103,8 @@ pub struct CreateUserRequest {
     pub pin: String,
     #[serde(default)]
     pub master_user: bool,
+    #[serde(default)]
+    pub notes: String,
 }
 
 fn default_department() -> i32 {
@@ -120,6 +122,7 @@ pub struct UpdateUserRequest {
     pub access_group: Option<i32>,
     pub pin: Option<String>,
     pub master_user: Option<bool>,
+    pub notes: Option<String>,
 }
 
 #[derive(Serialize, Clone)]
@@ -130,6 +133,7 @@ pub struct UserResponse {
     pub department: i32,
     pub access_group: i32,
     pub master_user: bool,
+    pub notes: String,
 }
 
 // ─── Card types ───
@@ -187,6 +191,7 @@ fn read_user(row: &tiberius::Row) -> UserResponse {
         department: row.get("IdDepartment").unwrap_or(0),
         access_group: row.get("IdAccessGroup").unwrap_or(0),
         master_user: row.get::<bool, _>("bMasterUser").unwrap_or(false),
+        notes: row.get::<&str, _>("tNotes").unwrap_or("").to_string(),
     }
 }
 
@@ -216,6 +221,7 @@ fn read_card_with_employee(row: &tiberius::Row) -> CardResponse {
             department: row.get("emp_dept").unwrap_or(0),
             access_group: row.get("emp_ag").unwrap_or(0),
             master_user: row.get::<bool, _>("emp_master").unwrap_or(false),
+            notes: row.get::<&str, _>("emp_notes").unwrap_or("").to_string(),
         })
     } else {
         None
@@ -237,7 +243,8 @@ fn read_card_with_employee(row: &tiberius::Row) -> CardResponse {
 const CARD_JOIN_SELECT: &str =
     "SELECT c.IdCardNum, c.iSiteCode, c.iCardCode, c.eCardStatus, c.IdEmpNum,
             e.tFirstName AS emp_first, e.tLastName AS emp_last,
-            e.IdDepartment AS emp_dept, e.IdAccessGroup AS emp_ag, e.bMasterUser AS emp_master
+            e.IdDepartment AS emp_dept, e.IdAccessGroup AS emp_ag, e.bMasterUser AS emp_master,
+            e.tNotes AS emp_notes
      FROM tblCard c
      LEFT JOIN tblEmployees e ON c.IdEmpNum = e.iEmployeeNum";
 
@@ -285,12 +292,12 @@ pub async fn create_user(
                 iEmployeeNum, tFirstName, tLastName, IdDepartment,
                 IdAccessGroup, dtStartDate, dtStopDate, bValidDate,
                 dtEmpDate, tCodePIN, IdTimeGroup, IdOutputsGroup, iCounter,
-                EmpNumCompany, bMasterUser
+                EmpNumCompany, bMasterUser, tNotes
             ) VALUES (
                 @P1, @P2, @P3, @P4,
                 @P5, GETDATE(), GETDATE(), 0,
                 GETDATE(), @P6, 1, 0, 1,
-                @P7, @P8
+                @P7, @P8, @P9
             )",
             &[
                 &emp_id,
@@ -301,6 +308,7 @@ pub async fn create_user(
                 &req.pin.as_str(),
                 &emp_id,
                 &req.master_user,
+                &req.notes.as_str(),
             ],
         )
         .await;
@@ -323,6 +331,7 @@ pub async fn create_user(
                     "department": req.department,
                     "access_group": req.access_group,
                     "master_user": req.master_user,
+                    "notes": req.notes,
                 }
             }))
         }
@@ -339,7 +348,7 @@ pub async fn list_users(State(state): State<AppState>) -> JsonResponse {
 
     let rows = match query_rows(
         &mut db,
-        "SELECT iEmployeeNum, tFirstName, tLastName, IdDepartment, IdAccessGroup, bMasterUser
+        "SELECT iEmployeeNum, tFirstName, tLastName, IdDepartment, IdAccessGroup, bMasterUser, tNotes
          FROM tblEmployees ORDER BY iEmployeeNum",
         &[],
     )
@@ -359,7 +368,7 @@ pub async fn get_user(State(state): State<AppState>, Path(id): Path<i32>) -> Jso
 
     let row = match query_opt_row(
         &mut db,
-        "SELECT iEmployeeNum, tFirstName, tLastName, IdDepartment, IdAccessGroup, bMasterUser
+        "SELECT iEmployeeNum, tFirstName, tLastName, IdDepartment, IdAccessGroup, bMasterUser, tNotes
          FROM tblEmployees WHERE iEmployeeNum = @P1",
         &[&id],
     )
@@ -395,6 +404,7 @@ pub async fn get_user(State(state): State<AppState>, Path(id): Path<i32>) -> Jso
             "department": user.department,
             "access_group": user.access_group,
             "master_user": user.master_user,
+            "notes": user.notes,
             "cards": cards,
         }
     }))
@@ -486,6 +496,12 @@ pub async fn update_user(
             sql: format!("bMasterUser = @P{param_idx}"),
         });
     }
+    if req.notes.is_some() {
+        param_idx += 1;
+        clauses.push(SetClause {
+            sql: format!("tNotes = @P{param_idx}"),
+        });
+    }
 
     if clauses.is_empty() {
         rollback(&mut db).await;
@@ -515,6 +531,9 @@ pub async fn update_user(
         query_params.push(v as &dyn tiberius::ToSql);
     }
     if let Some(ref v) = req.master_user {
+        query_params.push(v as &dyn tiberius::ToSql);
+    }
+    if let Some(ref v) = req.notes {
         query_params.push(v as &dyn tiberius::ToSql);
     }
 
