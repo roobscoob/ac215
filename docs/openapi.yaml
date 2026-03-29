@@ -693,8 +693,48 @@ paths:
                   error:
                     type: string
 
+  /v1/status:
+    get:
+      summary: Get proxy and component status
+      description: >
+        Returns the current state of all tracked components (proxy lifecycle,
+        coordinator, pipeline handlers, database) as a flat record keyed by
+        component name. Each entry includes the current state, a millisecond
+        timestamp of when it entered that state, and an optional detail object
+        with state-specific information.
+      responses:
+        "200":
+          description: Current component statuses.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, components]
+                properties:
+                  ok:
+                    type: boolean
+                    const: true
+                  components:
+                    type: object
+                    additionalProperties:
+                      $ref: "#/components/schemas/StatusEntry"
+
 components:
   schemas:
+    StatusEntry:
+      type: object
+      required: [state, since]
+      properties:
+        state:
+          type: string
+          description: Current state of the component.
+        since:
+          type: integer
+          description: Milliseconds since Unix epoch when this state was entered.
+        detail:
+          type: object
+          description: State-specific detail (absent when there is nothing extra to report).
+
     WebhookEvent:
       type: object
       required: [time, type, data]

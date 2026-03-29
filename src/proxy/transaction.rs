@@ -85,6 +85,16 @@ impl TransactionRewriter {
         }
     }
 
+    /// Number of in-flight requests awaiting panel responses.
+    pub fn pending_count(&self) -> usize {
+        self.pending.len()
+    }
+
+    /// Whether the rewriter has observed at least one frame.
+    pub fn is_tracking(&self) -> bool {
+        self.panel_next.is_some()
+    }
+
     /// Consume the next panel-side transaction ID. On the first call, we learn
     /// the starting point from the server's actual ID.
     fn next_panel_txn(&mut self, server_txn: Ac215TransactionId) -> Ac215TransactionId {

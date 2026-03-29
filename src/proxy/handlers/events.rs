@@ -8,6 +8,7 @@ use crate::server::Frame;
 
 use super::super::message::Side;
 use super::super::pipeline::{Disposition, FrameHandler, FrameHandling, HandlerContext};
+use super::super::status::StatusTracker;
 
 type EventCallback = Box<dyn FnOnce(&EventRecord) -> Disposition + Send>;
 
@@ -38,6 +39,7 @@ pub struct EventsHandler {
     pending: Vec<PendingCallback>,
     on_status: Option<StatusChangeCallback>,
     on_access: Option<AccessCallback>,
+    status: Option<StatusTracker>,
 }
 
 impl EventsHandler {
@@ -47,7 +49,14 @@ impl EventsHandler {
             pending: Vec::new(),
             on_status: None,
             on_access: None,
+            status: None,
         }
+    }
+
+    /// Attach a status tracker for reporting handler state.
+    pub fn set_status_tracker(&mut self, status: StatusTracker) {
+        status.set("handler.events", "no_status");
+        self.status = Some(status);
     }
 
     /// Get the last received events packet, if any.
@@ -142,7 +151,20 @@ impl FrameHandler for EventsHandler {
             }
         }
 
-        self.last_events = Some(pkt);
+        self.last_events = Some(pkt.clone());
+
+        if let Some(ref status) = self.status {
+            let active: Vec<u8> = (0..32u8).filter(|&i| pkt.ac825_status.output_active(i)).collect();
+            let overridden: Vec<u8> = (0..32u8).filter(|&i| pkt.ac825_status.output_is_manual(i)).collect();
+            status.set_detail(
+                "handler.events",
+                "has_status",
+                serde_json::json!({
+                    "active_outputs": active,
+                    "overridden_outputs": overridden,
+                }),
+            );
+        }
 
         Disposition::Forward
     }

@@ -2,7 +2,7 @@ use std::future::Future;
 use std::sync::{Arc, RwLock};
 
 use ractor::ActorRef;
-use tokio::sync::oneshot;
+use tokio::sync::{Mutex, oneshot};
 
 use crate::packet::Ac215Packet;
 use crate::packet::address::Addressing;
@@ -56,6 +56,8 @@ pub trait Transaction: Send {
 #[derive(Clone)]
 pub struct InterceptorHandle {
     coordinator: Arc<RwLock<Option<ActorRef<CoordinatorMsg>>>>,
+    /// Serializes transactions so only one runs at a time.
+    transaction_lock: Arc<Mutex<()>>,
 }
 
 impl InterceptorHandle {
@@ -64,12 +66,14 @@ impl InterceptorHandle {
     pub(crate) fn empty() -> Self {
         Self {
             coordinator: Arc::new(RwLock::new(None)),
+            transaction_lock: Arc::new(Mutex::new(())),
         }
     }
 
     pub fn new(coordinator: ActorRef<CoordinatorMsg>) -> Self {
         Self {
             coordinator: Arc::new(RwLock::new(Some(coordinator))),
+            transaction_lock: Arc::new(Mutex::new(())),
         }
     }
 
@@ -82,10 +86,12 @@ impl InterceptorHandle {
         self.coordinator.read().unwrap().clone().expect("handle used before proxy is connected")
     }
 
-    /// Run a transaction. Blocks the server→panel primary channel for the
-    /// entire duration. The transaction's `recover` method will be called
+    /// Run a transaction. Only one transaction runs at a time — concurrent
+    /// callers wait in FIFO order. Blocks the server→panel primary channel
+    /// for the duration. The transaction's `recover` method will be called
     /// (also under a block) if the proxy resets before `execute` completes.
     pub async fn run_transaction<T: Transaction>(&self, txn: &mut T) -> T::Result {
+        let _guard = self.transaction_lock.lock().await;
         self.block_server_primary();
         let result = txn.execute(self).await;
         self.unblock_server_primary();

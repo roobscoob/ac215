@@ -14,6 +14,7 @@ use log::{error, info};
 use ac215::crypto::Cipher;
 use ac215::packet::header::ChecksumMode;
 use ac215::proxy::Proxy;
+use ac215::proxy::StatusTracker;
 use ac215::proxy::handlers::nack::NackHandler;
 use ac215::proxy::handlers::{EventsHandler, LoggingHandler};
 use ac215::proxy::pipeline::FrameHandler;
@@ -41,6 +42,7 @@ pub struct AppState {
     pub events_handler: Arc<Mutex<EventsHandler>>,
     pub local_db: Arc<LocalDb>,
     pub db: Arc<AsyncMutex<db::DbClient>>,
+    pub status: StatusTracker,
 }
 
 fn main() {
@@ -191,8 +193,12 @@ async fn run(
     println!("  API:    http://{}", config.api.listen);
     println!();
 
+    // Status tracker — shared across all components.
+    let status = StatusTracker::new();
+
     // Construct handlers — keep typed references for the ones we need.
     let mut events_handler_inner = EventsHandler::new();
+    events_handler_inner.set_status_tracker(status.clone());
     {
         let ldb = local_db.clone();
         events_handler_inner.on_status(move |prev, curr| {
@@ -206,7 +212,9 @@ async fn run(
         });
     }
     let events_handler = Arc::new(Mutex::new(events_handler_inner));
-    let nack_handler = Arc::new(Mutex::new(NackHandler::new()));
+    let mut nack_handler_inner = NackHandler::new();
+    nack_handler_inner.set_status_tracker(status.clone());
+    let nack_handler = Arc::new(Mutex::new(nack_handler_inner));
     let logging_handler = Arc::new(Mutex::new(LoggingHandler));
 
     let handlers: Vec<Arc<Mutex<dyn FrameHandler>>> = vec![
@@ -221,6 +229,7 @@ async fn run(
         Cipher::new(),
         ChecksumMode::Auto,
         handlers,
+        status.clone(),
     );
 
     let state = AppState {
@@ -229,6 +238,7 @@ async fn run(
         events_handler: events_handler.clone(),
         local_db: local_db.clone(),
         db: db.clone(),
+        status: status.clone(),
     };
 
     // Shutdown handler: revert override on Ctrl+C (direct mode).

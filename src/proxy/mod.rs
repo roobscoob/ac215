@@ -5,11 +5,13 @@ pub mod message;
 pub mod pipeline;
 mod reader;
 mod recording_reader;
+pub mod status;
 mod transaction;
 mod writer;
 
 pub use coordinator::CoordinatorActor;
 pub use interceptor::{InterceptorHandle, Transaction};
+pub use status::StatusTracker;
 pub use message::{CoordinatorMsg, Side, WriterMsg};
 pub use reader::spawn_reader;
 pub use writer::WriterActor;
@@ -51,6 +53,7 @@ pub struct Proxy {
     handle: InterceptorHandle,
     handlers: Vec<Arc<Mutex<dyn pipeline::FrameHandler>>>,
     on_listening: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+    status: StatusTracker,
 }
 
 impl Proxy {
@@ -60,6 +63,7 @@ impl Proxy {
         cipher: Cipher,
         checksum_mode: ChecksumMode,
         handlers: Vec<Arc<Mutex<dyn pipeline::FrameHandler>>>,
+        status: StatusTracker,
     ) -> Self {
         Self {
             listen_addr,
@@ -69,6 +73,7 @@ impl Proxy {
             handle: InterceptorHandle::empty(),
             handlers,
             on_listening: Mutex::new(None),
+            status,
         }
     }
 
@@ -100,9 +105,15 @@ impl Proxy {
                 Ok(coordinator_handle) => {
                     let _ = coordinator_handle.await;
                     info!("Disconnected, resetting...");
+                    self.status.set("proxy", "disconnected");
                 }
                 Err(e) => {
                     error!("Connection failed: {e}, retrying...");
+                    self.status.set_detail(
+                        "proxy",
+                        "retry_backoff",
+                        serde_json::json!({ "error": e.to_string() }),
+                    );
                     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
                 }
             }
@@ -119,6 +130,7 @@ impl Proxy {
         // --- Phase 1: Accept the server's primary connection ---
         let server_listener = TcpListener::bind(listen_addr).await?;
         info!("Listening for server on {listen_addr}...");
+        self.status.set("proxy", "listening");
 
         if let Some(tx) = self.on_listening.lock().unwrap().take() {
             let _ = tx.send(());
@@ -126,6 +138,11 @@ impl Proxy {
 
         let (server_primary, server_peer) = server_listener.accept().await?;
         info!("Server connected from {server_peer}");
+        self.status.set_detail(
+            "proxy",
+            "server_connected",
+            serde_json::json!({ "server_addr": server_peer.to_string() }),
+        );
 
         // --- Phase 2: Connect to the real panel + listen for its async callback ---
         let panel_async_bind = SocketAddr::new("0.0.0.0".parse().unwrap(), panel_addr.port() + 1);
@@ -133,11 +150,21 @@ impl Proxy {
         info!("Listening for panel async on {panel_async_bind}");
 
         info!("Connecting to panel at {panel_addr}...");
+        self.status.set_detail(
+            "proxy",
+            "connecting_panel",
+            serde_json::json!({ "panel_addr": panel_addr.to_string() }),
+        );
         let panel_primary = TcpStream::connect(panel_addr).await?;
         info!("Panel primary connected");
 
         // --- Phase 3: Accept the panel's async connection (2s timeout) ---
         info!("Waiting for panel async callback...");
+        self.status.set_detail(
+            "proxy",
+            "waiting_panel_async",
+            serde_json::json!({ "bind_addr": panel_async_bind.to_string() }),
+        );
         let (panel_async, panel_async_peer) = tokio::time::timeout(
             std::time::Duration::from_secs(2),
             panel_async_listener.accept(),
@@ -150,6 +177,11 @@ impl Proxy {
         // --- Phase 4: Connect to the server's async listener ---
         let server_async_addr = SocketAddr::new(server_peer.ip(), listen_addr.port() + 1);
         info!("Connecting to server async at {server_async_addr}...");
+        self.status.set_detail(
+            "proxy",
+            "connecting_server_async",
+            serde_json::json!({ "server_async_addr": server_async_addr.to_string() }),
+        );
         let server_async = TcpStream::connect(server_async_addr).await?;
         info!("Server async connected");
 
@@ -214,6 +246,7 @@ impl Proxy {
                 server_primary: server_primary_w,
                 server_async: server_async_w,
                 handlers: self.handlers.clone(),
+                status: self.status.clone(),
             },
         )
         .await
@@ -258,6 +291,14 @@ impl Proxy {
         );
 
         info!("All actors running");
+        self.status.set_detail(
+            "proxy",
+            "running",
+            serde_json::json!({
+                "server_addr": server_peer.to_string(),
+                "panel_addr": panel_addr.to_string(),
+            }),
+        );
 
         self.handle.set_coordinator(coordinator);
 

@@ -11,6 +11,7 @@ use crate::server::Frame;
 
 use super::message::{CoordinatorMsg, Side, WriterMsg};
 use super::pipeline::{ExtraPacket, FrameHandler, FrameHandling, Pipeline};
+use super::status::StatusTracker;
 use super::transaction::{ResponseRouting, TransactionRewriter};
 
 pub struct CoordinatorActor;
@@ -25,6 +26,7 @@ pub struct CoordinatorState {
     /// When true, server→panel primary frames are buffered instead of forwarded.
     server_primary_blocked: bool,
     server_primary_buffer: Vec<Frame>,
+    status: StatusTracker,
 }
 
 pub struct CoordinatorArgs {
@@ -33,6 +35,7 @@ pub struct CoordinatorArgs {
     pub server_primary: ActorRef<WriterMsg>,
     pub server_async: ActorRef<WriterMsg>,
     pub handlers: Vec<Arc<Mutex<dyn FrameHandler>>>,
+    pub status: StatusTracker,
 }
 
 impl CoordinatorState {
@@ -69,6 +72,7 @@ impl Actor for CoordinatorActor {
         _myself: ActorRef<Self::Msg>,
         args: Self::Arguments,
     ) -> Result<Self::State, ActorProcessingErr> {
+        args.status.set("coordinator", "relaying");
         Ok(CoordinatorState {
             panel_primary: args.panel_primary,
             panel_async: args.panel_async,
@@ -78,6 +82,7 @@ impl Actor for CoordinatorActor {
             rewriter: TransactionRewriter::new(),
             server_primary_blocked: false,
             server_primary_buffer: Vec::new(),
+            status: args.status,
         })
     }
 
@@ -94,6 +99,13 @@ impl Actor for CoordinatorActor {
 
             CoordinatorMsg::Disconnected { side, channel } => {
                 info!("{:?}/{:?} disconnected, shutting down", side, channel);
+                state.status.set_detail(
+                    "coordinator",
+                    "stopped",
+                    serde_json::json!({
+                        "reason": format!("{side:?}/{channel:?} disconnected"),
+                    }),
+                );
                 state.shutdown_all();
                 myself.stop(Some("disconnect".to_string()));
             }
@@ -137,6 +149,14 @@ impl Actor for CoordinatorActor {
 
             CoordinatorMsg::BlockServerPrimary => {
                 state.server_primary_blocked = true;
+                state.status.set_detail(
+                    "coordinator",
+                    "blocking",
+                    serde_json::json!({
+                        "pending_requests": state.rewriter.pending_count(),
+                        "buffered_frames": state.server_primary_buffer.len(),
+                    }),
+                );
             }
 
             CoordinatorMsg::UnblockServerPrimary => {
@@ -145,6 +165,13 @@ impl Actor for CoordinatorActor {
                 for frame in buffered {
                     forward_to_panel(frame, state);
                 }
+                state.status.set_detail(
+                    "coordinator",
+                    "tracking",
+                    serde_json::json!({
+                        "pending_requests": state.rewriter.pending_count(),
+                    }),
+                );
             }
         }
         Ok(())
@@ -265,7 +292,12 @@ fn handle_frame(from: Side, frame: Frame, state: &mut CoordinatorState) {
 
 /// Rewrite a server request's transaction ID and send it to the panel.
 fn forward_to_panel(frame: Frame, state: &mut CoordinatorState) {
+    let was_tracking = state.rewriter.is_tracking();
     let (header, payload, channel) = frame.into_parts();
     let header = state.rewriter.forward_to_panel(header);
     state.send_frame(Side::Panel, Frame::new(header, payload, channel));
+
+    if !was_tracking && state.rewriter.is_tracking() {
+        state.status.set("coordinator", "tracking");
+    }
 }
