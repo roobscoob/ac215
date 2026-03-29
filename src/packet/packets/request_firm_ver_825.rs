@@ -13,7 +13,7 @@ impl Ac215Packet for RequestFirmVer825Packet {
         0x6B
     }
 
-    fn into_bytes(self, out: &mut [u8; 467]) -> u16 {
+    fn into_bytes(self, out: &mut [u8; 468]) -> u16 {
         0
     }
 

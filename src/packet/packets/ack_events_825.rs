@@ -13,7 +13,7 @@ impl Ac215Packet for AckEvents825Packet {
         0x50
     }
 
-    fn into_bytes(self, _out: &mut [u8; 467]) -> u16 {
+    fn into_bytes(self, _out: &mut [u8; 468]) -> u16 {
         0
     }
 

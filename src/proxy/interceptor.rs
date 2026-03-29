@@ -14,7 +14,7 @@ use super::message::{CoordinatorMsg, Side};
 
 /// Serialize a packet into (command_id, data).
 fn serialize_packet<P: Ac215Packet>(packet: P) -> (u8, Vec<u8>) {
-    let mut buf = [0u8; 467];
+    let mut buf = [0u8; 468];
     let command_id = packet.packet_id();
     let data_len = packet.into_bytes(&mut buf);
     let data = buf[..data_len as usize].to_vec();

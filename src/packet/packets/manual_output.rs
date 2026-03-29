@@ -136,7 +136,7 @@ impl Ac215Packet for ManualOutputPacket {
         0x22
     }
 
-    fn into_bytes(self, out: &mut [u8; 467]) -> u16 {
+    fn into_bytes(self, out: &mut [u8; 468]) -> u16 {
         let count = match self.variant {
             ManualOutputVariant::Legacy => 16,
             ManualOutputVariant::Ac825 => 32,
@@ -259,7 +259,7 @@ mod tests {
     fn round_trip() {
         let pkt = ManualOutputPacket::pulse(&[1, 2, 3], 1, 30);
 
-        let mut out = [0u8; 467];
+        let mut out = [0u8; 468];
         let len = pkt.clone().into_bytes(&mut out);
         assert_eq!(len, 129);
 

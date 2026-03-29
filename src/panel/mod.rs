@@ -104,7 +104,7 @@ impl Panel {
         packet: impl Ac215Packet,
     ) -> std::io::Result<()> {
         let command_id = packet.packet_id();
-        let mut tmp = [0u8; 467];
+        let mut tmp = [0u8; 468];
         let data_length = packet.into_bytes(&mut tmp);
 
         let header = Ac215Header::new(
@@ -204,7 +204,7 @@ impl Panel {
         let tid = Ac215TransactionId::from_byte(*tx_id);
         *tx_id = tx_id.wrapping_add(1);
 
-        let mut tmp = [0u8; 467];
+        let mut tmp = [0u8; 468];
         let data_length = packet.into_bytes(&mut tmp);
 
         let header = Ac215Header::new(

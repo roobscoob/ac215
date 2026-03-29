@@ -99,7 +99,7 @@ impl Ac215Packet for SendLogMessagePacket {
         0xD4
     }
 
-    fn into_bytes(self, out: &mut [u8; 467]) -> u16 {
+    fn into_bytes(self, out: &mut [u8; 468]) -> u16 {
         out[0] = self.destination.bits();
         out[1] = self.severity.into_byte();
         let msg_bytes = self.message.as_bytes();
@@ -186,7 +186,7 @@ mod tests {
             },
         };
 
-        let mut out = [0u8; 467];
+        let mut out = [0u8; 468];
         let len = pkt.clone().into_bytes(&mut out);
 
         let pkt2 = SendLogMessagePacket::from_bytes(&dummy_header(), &out[..len as usize]).unwrap();

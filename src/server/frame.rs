@@ -60,7 +60,7 @@ impl Frame {
     /// Rebuilds the header with the new packet's command ID and data length,
     /// preserving addressing, transaction ID, event flag, and checksum mode.
     pub fn replace<P: Ac215Packet>(&mut self, packet: P) {
-        let mut buf = [0u8; 467];
+        let mut buf = [0u8; 468];
         let command_id = packet.packet_id();
         let data_len = packet.into_bytes(&mut buf);
 

@@ -24,6 +24,11 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tiberius = { version = "0.12", default-features = false, features = ["rustls", "tds73"] }
 tokio-util = { version = "0.7", features = ["compat"] }
+clap = { version = "4", features = ["derive"] }
+opentelemetry = { version = "0.31", features = ["logs"] }
+opentelemetry_sdk = { version = "0.31", features = ["logs"] }
+opentelemetry-appender-log = "0.31"
+opentelemetry-otlp = { version = "0.31", features = ["http-proto", "logs", "reqwest-blocking-client", "reqwest-rustls"] }
 toml = "0.8"
 windows-service = "0.7"
 tokio = { version = "1.50.0", features = [

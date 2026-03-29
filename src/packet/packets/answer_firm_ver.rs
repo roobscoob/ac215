@@ -166,7 +166,7 @@ impl Ac215Packet for AnswerFirmVer825Packet {
         0xEB
     }
 
-    fn into_bytes(self, out: &mut [u8; 467]) -> u16 {
+    fn into_bytes(self, out: &mut [u8; 468]) -> u16 {
         match self.status {
             FirmwareStatus::Minimal => {
                 // raw_size 9: only bootloader, 8 bytes at offset 0
@@ -397,7 +397,7 @@ mod tests {
         assert_eq!(pkt.ticket.unwrap()[0], 0x94);
 
         // Round-trip
-        let mut out = [0u8; 467];
+        let mut out = [0u8; 468];
         let len = pkt.clone().into_bytes(&mut out);
         let pkt2 = AnswerFirmVer825Packet::from_bytes(&dummy_header(), &out[..len as usize]).unwrap();
         assert_eq!(pkt2.status, FirmwareStatus::Current);

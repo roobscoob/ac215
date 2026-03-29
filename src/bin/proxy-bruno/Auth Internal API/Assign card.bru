@@ -1,0 +1,21 @@
+meta {
+  name: Assign card
+  type: http
+  seq: 24
+}
+
+post {
+  url: http://{{HOSTNAME}}:8181/v1/cards/1/assign
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "employee_id": 1
+  }
+}
+
+settings {
+  encodeUrl: true
+}

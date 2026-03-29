@@ -10,6 +10,7 @@ pub struct Config {
     #[serde(default)]
     pub local_database: LocalDatabaseConfig,
     pub rosslare_database: RosslareDatabaseConfig,
+    pub posthog: Option<PosthogConfig>,
 }
 
 #[derive(Deserialize)]
@@ -40,6 +41,11 @@ pub struct RosslareDatabaseConfig {
     pub password: String,
     #[serde(default = "default_rosslare_database")]
     pub database: String,
+}
+
+#[derive(Deserialize)]
+pub struct PosthogConfig {
+    pub api_key: String,
 }
 
 fn default_proxy_listen() -> SocketAddr {

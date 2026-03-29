@@ -1,0 +1,16 @@
+meta {
+  name: Lookup card
+  type: http
+  seq: 22
+}
+
+get {
+  url: http://{{HOSTNAME}}:8181/v1/cards/lookup/198/1093
+  body: none
+  auth: inherit
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

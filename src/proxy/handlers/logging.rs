@@ -1,6 +1,7 @@
 use log::debug;
 
 use crate::packet::named_id::NamedPacketId;
+use crate::packet::packets::answer_events_825::AnswerEvents825;
 use crate::packet::packets::send_log_message::SendLogMessagePacket;
 use crate::server::Channel;
 use crate::server::Frame;
@@ -11,7 +12,13 @@ use super::super::pipeline::{Disposition, FrameHandler, FrameHandling, HandlerCo
 pub struct LoggingHandler;
 
 impl FrameHandler for LoggingHandler {
-    fn on_frame(&mut self, _ctx: &mut HandlerContext, handling: FrameHandling, from: Side, frame: &mut Frame) -> Disposition {
+    fn on_frame(
+        &mut self,
+        _ctx: &mut HandlerContext,
+        handling: FrameHandling,
+        from: Side,
+        frame: &mut Frame,
+    ) -> Disposition {
         let header = frame.header();
         let channel = frame.channel();
         let cmd = NamedPacketId(header.command_id());
@@ -74,6 +81,22 @@ impl FrameHandler for LoggingHandler {
                 "",
                 pad = 6 - format!("{:?}", from).len(),
             );
+        }
+
+        if let Some(Ok(pkt)) = frame.parse::<AnswerEvents825>() {
+            for event in pkt.active_events() {
+                debug!(
+                    "{GREY}[{RESET}{channel_color}{:<7}{RESET} {GREY}({RESET}{side_color}{}{RESET}{GREY}){RESET}{:<pad$}{GREY}]{RESET} {marker} EVT #{evn} {ts} {typ:?} @ {loc:?}",
+                    format!("{:?}", channel),
+                    format!("{:?}", from),
+                    "",
+                    pad = 6 - format!("{:?}", from).len(),
+                    evn = event.event_number,
+                    ts = event.timestamp,
+                    typ = event.event_type,
+                    loc = event.location,
+                );
+            }
         }
 
         Disposition::Forward

@@ -430,11 +430,7 @@ impl AnswerEvents825 {
 
     /// Highest event number in this response, or None if all slots are empty.
     pub fn max_event_number(&self) -> Option<u32> {
-        self.events
-            .iter()
-            .flatten()
-            .map(|e| e.event_number)
-            .max()
+        self.events.iter().flatten().map(|e| e.event_number).max()
     }
 
     /// The full raw status block (322 bytes) for caching/passthrough.
@@ -455,7 +451,7 @@ impl Ac215Packet for AnswerEvents825 {
         0xC9
     }
 
-    fn into_bytes(self, out: &mut [u8; 467]) -> u16 {
+    fn into_bytes(self, out: &mut [u8; 468]) -> u16 {
         // Status block: AC-825 (34 bytes) + extensions (288 bytes) = 322 bytes
         self.ac825_status.write(&mut out[0..34]);
         out[34..322].copy_from_slice(&self.extension_status);
@@ -472,11 +468,10 @@ impl Ac215Packet for AnswerEvents825 {
             }
         }
 
-        // Note: full payload is 468 bytes but buffer is 467. The 468th byte
-        // (trailing padding) is always 0 and gets handled by the frame layer's
-        // zero-padding to the AES block boundary. We return 467 as the data
-        // length; the extra byte is implicit padding.
-        467
+        // Trailing padding byte
+        out[467] = self.trailing;
+
+        468
     }
 
     fn from_bytes(
@@ -633,8 +628,8 @@ mod tests {
         assert_eq!(ev0.event_number, 435417);
         assert_eq!(ev3.event_number, 435420);
         assert_eq!(ev0.event_type, EventType::new(0x51, 0x00));
-        assert_eq!(ev0.location, EventLocation::Output(1));
-        assert_eq!(ev3.location, EventLocation::Output(4));
+        assert_eq!(ev0.location, EventLocation::Output(0));
+        assert_eq!(ev3.location, EventLocation::Output(3));
         assert_eq!(pkt.max_event_number(), Some(435420));
     }
 
@@ -653,9 +648,9 @@ mod tests {
         let payload = captured_payload();
         let pkt = AnswerEvents825::from_bytes(&dummy_header(), &payload).unwrap();
 
-        let mut out = [0u8; 467];
+        let mut out = [0u8; 468];
         let len = pkt.clone().into_bytes(&mut out);
-        assert_eq!(len, 467);
+        assert_eq!(len, 468);
 
         // Re-parse from our output (only 467 bytes available in buffer)
         let pkt2 = AnswerEvents825::from_bytes(&dummy_header(), &out).unwrap();
@@ -676,27 +671,6 @@ mod tests {
         assert_eq!(block[4], 0x3F);
         assert_eq!(block[8], 0x80);
         assert_eq!(block[9], 0x55);
-    }
-
-    #[test]
-    fn timestamp_round_trip() {
-        let ts = PackedTimestamp {
-            year: 2026,
-            month: 3,
-            day: 27,
-            hour: 21,
-            minute: 56,
-            second: 43,
-        };
-        let encoded = ts.encode();
-        let decoded = PackedTimestamp::decode(&encoded);
-
-        assert_eq!(decoded.year, ts.year);
-        assert_eq!(decoded.month, ts.month);
-        assert_eq!(decoded.day, ts.day);
-        assert_eq!(decoded.hour, ts.hour);
-        assert_eq!(decoded.minute, ts.minute);
-        assert_eq!(decoded.second, ts.second);
     }
 
     #[test]

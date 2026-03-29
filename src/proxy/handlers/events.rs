@@ -1,5 +1,7 @@
-use log::info;
-
+use crate::event::access_event_data::AccessEventData;
+use crate::event::event_type::AccessOutcome;
+use crate::event::location::EventLocation;
+use crate::event::timestamp::PackedTimestamp;
 use crate::event::{EventRecord, EventType};
 use crate::packet::packets::answer_events_825::AnswerEvents825;
 use crate::server::Frame;
@@ -13,6 +15,19 @@ type EventCallback = Box<dyn FnOnce(&EventRecord) -> Disposition + Send>;
 /// Arguments: (previous status, new status).
 type StatusChangeCallback = Box<dyn Fn(Option<&AnswerEvents825>, &AnswerEvents825) + Send>;
 
+type AccessCallback = Box<dyn Fn(&AccessEvent) + Send>;
+
+/// Parsed access event with credential data extracted.
+#[derive(Debug, Clone)]
+pub struct AccessEvent {
+    pub timestamp: PackedTimestamp,
+    pub outcome: AccessOutcome,
+    pub location: EventLocation,
+    pub site_code: u16,
+    pub card_code: u64,
+    pub format_index: u8,
+}
+
 struct PendingCallback {
     event_type: EventType,
     callback: EventCallback,
@@ -22,6 +37,7 @@ pub struct EventsHandler {
     last_events: Option<AnswerEvents825>,
     pending: Vec<PendingCallback>,
     on_status: Option<StatusChangeCallback>,
+    on_access: Option<AccessCallback>,
 }
 
 impl EventsHandler {
@@ -30,6 +46,7 @@ impl EventsHandler {
             last_events: None,
             pending: Vec::new(),
             on_status: None,
+            on_access: None,
         }
     }
 
@@ -48,6 +65,12 @@ impl EventsHandler {
         callback: impl Fn(Option<&AnswerEvents825>, &AnswerEvents825) + Send + 'static,
     ) {
         self.on_status = Some(Box::new(callback));
+    }
+
+    /// Register a callback that fires for every access event (granted, denied,
+    /// intermediate, code accepted, or config mode) that carries card credentials.
+    pub fn on_access(&mut self, callback: impl Fn(&AccessEvent) + Send + 'static) {
+        self.on_access = Some(Box::new(callback));
     }
 
     pub fn once(
@@ -100,6 +123,23 @@ impl FrameHandler for EventsHandler {
 
         if let Some(cb) = &self.on_status {
             cb(self.last_events.as_ref(), &pkt);
+        }
+
+        if let Some(cb) = &self.on_access {
+            for event in pkt
+                .active_events()
+                .filter(|e| e.event_type.has_access_event_data())
+            {
+                let data = AccessEventData::parse(&event.event_data);
+                cb(&AccessEvent {
+                    timestamp: event.timestamp,
+                    outcome: event.event_type.access_outcome().unwrap(),
+                    location: event.location,
+                    site_code: data.site_code,
+                    card_code: data.card_code(),
+                    format_index: if data.is_primary_format() { 0 } else { 1 },
+                });
+            }
         }
 
         self.last_events = Some(pkt);

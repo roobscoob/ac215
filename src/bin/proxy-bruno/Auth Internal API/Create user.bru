@@ -1,0 +1,26 @@
+meta {
+  name: Create user
+  type: http
+  seq: 10
+}
+
+post {
+  url: http://{{HOSTNAME}}:8181/v1/users
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "first_name": "Test",
+    "last_name": "User",
+    "department": 1,
+    "access_group": 2,
+    "pin": "",
+    "master_user": true
+  }
+}
+
+settings {
+  encodeUrl: true
+}

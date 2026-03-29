@@ -32,8 +32,8 @@ impl EventLocation {
         match b {
             0x01 => Self::Panel,
 
-            0x11..=0x1A => Self::Door(b - 0x11 + 1),
-            0x21..=0x2A => Self::Reader(b - 0x21 + 1),
+            0x11..=0x1A => Self::Door(b - 0x11),
+            0x21..=0x2A => Self::Reader(b - 0x21),
 
             0x31 => Self::Voltage(VoltageSource::Aux),
             0x32 => Self::Voltage(VoltageSource::Vin),
@@ -43,11 +43,11 @@ impl EventLocation {
             0x36 => Self::Voltage(VoltageSource::AuxPwr),
             0x37 => Self::Voltage(VoltageSource::Battery),
 
-            0x41..=0x4F => Self::Input(b - 0x41 + 1),
-            0x51..=0x5F => Self::Output(b - 0x51 + 1),
+            0x41..=0x4F => Self::Input(b - 0x41),
+            0x51..=0x5F => Self::Output(b - 0x51),
 
-            0x81..=0x91 => Self::Input(b - 0x81 + 16),
-            0xA1..=0xAB => Self::Output(b - 0xA1 + 16),
+            0x81..=0x91 => Self::Input(b - 0x81 + 15),
+            0xA1..=0xAB => Self::Output(b - 0xA1 + 15),
 
             _ => Self::Unknown(b),
         }
@@ -58,8 +58,8 @@ impl EventLocation {
         match self {
             Self::Panel => 0x01,
 
-            Self::Door(n) => 0x11 + n - 1,
-            Self::Reader(n) => 0x21 + n - 1,
+            Self::Door(n) => 0x11 + n,
+            Self::Reader(n) => 0x21 + n,
 
             Self::Voltage(VoltageSource::Aux) => 0x31,
             Self::Voltage(VoltageSource::Vin) => 0x32,
@@ -69,11 +69,11 @@ impl EventLocation {
             Self::Voltage(VoltageSource::AuxPwr) => 0x36,
             Self::Voltage(VoltageSource::Battery) => 0x37,
 
-            Self::Input(n) if n <= 15 => 0x41 + n - 1,
-            Self::Input(n) => 0x81 + n - 16,
+            Self::Input(n) if n < 15 => 0x41 + n,
+            Self::Input(n) => 0x81 + n - 15,
 
-            Self::Output(n) if n <= 15 => 0x51 + n - 1,
-            Self::Output(n) => 0xA1 + n - 16,
+            Self::Output(n) if n < 15 => 0x51 + n,
+            Self::Output(n) => 0xA1 + n - 15,
 
             Self::Unknown(b) => b,
         }
@@ -114,7 +114,7 @@ mod tests {
     fn doors() {
         for i in 1..=10u8 {
             let loc = EventLocation::from_byte(0x10 + i);
-            assert_eq!(loc, EventLocation::Door(i));
+            assert_eq!(loc, EventLocation::Door(i - 1));
             assert_eq!(loc.to_byte(), 0x10 + i);
         }
     }
@@ -123,7 +123,7 @@ mod tests {
     fn readers() {
         for i in 1..=10u8 {
             let loc = EventLocation::from_byte(0x20 + i);
-            assert_eq!(loc, EventLocation::Reader(i));
+            assert_eq!(loc, EventLocation::Reader(i - 1));
             assert_eq!(loc.to_byte(), 0x20 + i);
         }
     }
@@ -138,14 +138,17 @@ mod tests {
             EventLocation::from_byte(0x37),
             EventLocation::Voltage(VoltageSource::Battery)
         );
-        assert_eq!(EventLocation::Voltage(VoltageSource::Battery).to_byte(), 0x37);
+        assert_eq!(
+            EventLocation::Voltage(VoltageSource::Battery).to_byte(),
+            0x37
+        );
     }
 
     #[test]
     fn inputs_low() {
         for i in 1..=15u8 {
             let loc = EventLocation::from_byte(0x40 + i);
-            assert_eq!(loc, EventLocation::Input(i));
+            assert_eq!(loc, EventLocation::Input(i - 1));
             assert_eq!(loc.to_byte(), 0x40 + i);
         }
     }
@@ -154,7 +157,7 @@ mod tests {
     fn inputs_high() {
         for i in 16..=32u8 {
             let loc = EventLocation::from_byte(0x81 + i - 16);
-            assert_eq!(loc, EventLocation::Input(i));
+            assert_eq!(loc, EventLocation::Input(i - 1));
             assert_eq!(loc.to_byte(), 0x81 + i - 16);
         }
     }
@@ -163,7 +166,7 @@ mod tests {
     fn outputs_low() {
         for i in 1..=15u8 {
             let loc = EventLocation::from_byte(0x50 + i);
-            assert_eq!(loc, EventLocation::Output(i));
+            assert_eq!(loc, EventLocation::Output(i - 1));
             assert_eq!(loc.to_byte(), 0x50 + i);
         }
     }
@@ -172,7 +175,7 @@ mod tests {
     fn outputs_high() {
         for i in 16..=26u8 {
             let loc = EventLocation::from_byte(0xA1 + i - 16);
-            assert_eq!(loc, EventLocation::Output(i));
+            assert_eq!(loc, EventLocation::Output(i - 1));
             assert_eq!(loc.to_byte(), 0xA1 + i - 16);
         }
     }

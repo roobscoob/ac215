@@ -6,6 +6,7 @@ mod local_db;
 use std::ffi::OsString;
 use std::sync::{Arc, Mutex};
 
+use clap::Parser;
 use tokio::sync::Mutex as AsyncMutex;
 
 use log::{error, info};
@@ -22,6 +23,17 @@ use local_db::LocalDb;
 
 const SERVICE_NAME: &str = "Ac215Proxy";
 
+#[derive(Parser)]
+struct Args {
+    /// Path to the configuration file
+    #[arg(default_value = "proxy.toml")]
+    config: String,
+
+    /// Run as a Windows service (launched by the SCM)
+    #[arg(long)]
+    service: bool,
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub handle: ac215::proxy::InterceptorHandle,
@@ -32,21 +44,57 @@ pub struct AppState {
 }
 
 fn main() {
-    env_logger::init();
+    let args = Args::parse();
 
-    if std::env::args().any(|a| a == "--service") {
+    if args.service {
         // Launched by the SCM — hand off to the service dispatcher.
+        // Store the config path so service_main can retrieve it.
+        CONFIG_PATH.set(args.config).expect("config path already set");
         windows_service::service_dispatcher::start(SERVICE_NAME, ffi_service_main)
             .expect("failed to start service dispatcher");
     } else {
-        // Running directly (development / debugging).
+        // Running directly — use env_logger for console output.
+        env_logger::init();
         let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
             .expect("failed to build tokio runtime");
-        rt.block_on(run(None));
+        rt.block_on(run(args.config, None));
     }
 }
+
+fn init_posthog_logger(api_key: &str) {
+    use opentelemetry_otlp::{LogExporter, WithExportConfig, WithHttpConfig};
+
+    let mut headers = std::collections::HashMap::new();
+    headers.insert(
+        "Authorization".to_string(),
+        format!("Bearer {api_key}"),
+    );
+
+    let exporter = LogExporter::builder()
+        .with_http()
+        .with_endpoint("https://us.i.posthog.com/i/v1/logs")
+        .with_headers(headers)
+        .build()
+        .expect("failed to build PostHog log exporter");
+
+    let provider = opentelemetry_sdk::logs::SdkLoggerProvider::builder()
+        .with_batch_exporter(exporter)
+        .build();
+
+    let bridge = opentelemetry_appender_log::OpenTelemetryLogBridge::new(&provider);
+    log::set_boxed_logger(Box::new(bridge)).expect("failed to set logger");
+    log::set_max_level(log::LevelFilter::Info);
+
+    // Keep the provider alive for the lifetime of the process.
+    LOGGER_PROVIDER.set(provider).expect("logger provider already set");
+}
+
+static LOGGER_PROVIDER: std::sync::OnceLock<opentelemetry_sdk::logs::SdkLoggerProvider> =
+    std::sync::OnceLock::new();
+
+static CONFIG_PATH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
 windows_service::define_windows_service!(ffi_service_main, service_main);
 
@@ -90,24 +138,28 @@ fn service_main(_args: Vec<OsString>) {
         .build()
         .expect("failed to build tokio runtime");
 
+    let config_path = CONFIG_PATH.get().expect("config path not set").clone();
     rt.block_on(async {
-        run(Some((status_handle, shutdown_rx))).await;
+        run(config_path, Some((status_handle, shutdown_rx))).await;
     });
 }
 
 /// Core proxy logic. If `service` is provided, we report SERVICE_RUNNING
 /// after the listener is up, and shut down on the stop signal.
 async fn run(
+    config_path: String,
     service: Option<(
         windows_service::service_control_handler::ServiceStatusHandle,
         tokio::sync::oneshot::Receiver<()>,
     )>,
 ) {
-    let config_path = std::env::args()
-        .find(|a| a != "--service" && !a.contains("proxy"))
-        .unwrap_or_else(|| "proxy.toml".to_string());
-
     let config = Config::load(&config_path);
+
+    if service.is_some() {
+        if let Some(ref posthog) = config.posthog {
+            init_posthog_logger(&posthog.api_key);
+        }
+    }
 
     let local_db = Arc::new(
         LocalDb::open(&config.local_database.path).expect("failed to open local database"),
@@ -145,6 +197,12 @@ async fn run(
         let ldb = local_db.clone();
         events_handler_inner.on_status(move |prev, curr| {
             api::webhooks::events::diff_outputs(&ldb, prev, curr);
+        });
+    }
+    {
+        let ldb = local_db.clone();
+        events_handler_inner.on_access(move |event| {
+            api::webhooks::events::on_access(&ldb, event);
         });
     }
     let events_handler = Arc::new(Mutex::new(events_handler_inner));
@@ -190,7 +248,12 @@ async fn run(
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         info!("panic detected, attempting to revert network override...");
-        let Some(mut client) = panic_db.lock().unwrap().take() else {
+        let Ok(mut guard) = panic_db.try_lock() else {
+            error!("panic db connection already locked");
+            default_hook(info);
+            return;
+        };
+        let Some(mut client) = guard.take() else {
             error!("panic db connection already consumed");
             default_hook(info);
             return;

@@ -61,7 +61,7 @@ impl Ac215Packet for UpdateClockPacket {
         0x62
     }
 
-    fn into_bytes(self, out: &mut [u8; 467]) -> u16 {
+    fn into_bytes(self, out: &mut [u8; 468]) -> u16 {
         out[0] = self.year;
         out[1] = self.month;
         out[2] = self.day_of_week;
@@ -126,7 +126,7 @@ mod tests {
             second: 45,
         };
 
-        let mut out = [0u8; 467];
+        let mut out = [0u8; 468];
         let len = pkt.into_bytes(&mut out);
         assert_eq!(len, 7);
         assert_eq!(&out[..7], &[26, 3, 4, 26, 14, 30, 45]);

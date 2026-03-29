@@ -1,5 +1,26 @@
 use core::fmt;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AccessOutcome {
+    Granted,
+    Denied,
+    Intermediate,
+    CodeRecorded,
+    ConfigMode,
+}
+
+impl AccessOutcome {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Granted => "granted",
+            Self::Denied => "denied",
+            Self::Intermediate => "intermediate",
+            Self::CodeRecorded => "code_recorded",
+            Self::ConfigMode => "config_mode",
+        }
+    }
+}
+
 // ── Event Category (type byte) ──────────────────────────────────────────────
 
 /// High-level event category derived from the event type byte.
@@ -479,6 +500,24 @@ impl EventType {
             self.type_id,
             0x11..=0x13 | 0x21..=0x23 | 0x71..=0x73 | 0x91..=0x93 | 0xC1..=0xC3
         )
+    }
+
+    /// Whether the event payload contains an `AccessEventData`
+    /// (facility + card code layout). True for all 0x_1 credential events:
+    /// AccessGranted, AccessDenied, Intermediate, CodeAccepted, ConfigMode.
+    pub fn has_access_event_data(&self) -> bool {
+        matches!(self.type_id, 0x11 | 0x21 | 0x71 | 0x91 | 0xC1)
+    }
+
+    pub fn access_outcome(&self) -> Option<AccessOutcome> {
+        match self.type_id {
+            0x11..=0x13 | 0x19 => Some(AccessOutcome::Granted),
+            0x21..=0x23 => Some(AccessOutcome::Denied),
+            0x71..=0x73 => Some(AccessOutcome::Intermediate),
+            0x91..=0x93 => Some(AccessOutcome::CodeRecorded),
+            0xC1..=0xC3 => Some(AccessOutcome::ConfigMode),
+            _ => None,
+        }
     }
 
     /// Whether this is a PIN event that carries keypad digits in the

@@ -1,0 +1,15 @@
+meta {
+  name: Unassign card
+  type: http
+  seq: 25
+}
+
+post {
+  url: http://{{HOSTNAME}}:8181/v1/cards/1/unassign
+  body: none
+  auth: inherit
+}
+
+settings {
+  encodeUrl: true
+}

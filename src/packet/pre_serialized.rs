@@ -4,14 +4,14 @@ use super::{Ac215Packet, header::Ac215Header};
 /// Useful for replaying captured or pre-built payloads through the framing layer.
 pub struct PreSerialized {
     id: u8,
-    data: [u8; 467],
+    data: [u8; 468],
     len: u16,
 }
 
 impl PreSerialized {
     pub fn new(id: u8, data: &[u8]) -> Self {
         let len = data.len() as u16;
-        let mut buf = [0u8; 467];
+        let mut buf = [0u8; 468];
         buf[..data.len()].copy_from_slice(data);
         Self { id, data: buf, len }
     }
@@ -26,7 +26,7 @@ impl Ac215Packet for PreSerialized {
         self.id
     }
 
-    fn into_bytes(self, out: &mut [u8; 467]) -> u16 {
+    fn into_bytes(self, out: &mut [u8; 468]) -> u16 {
         out[..self.len as usize].copy_from_slice(&self.data[..self.len as usize]);
         self.len
     }
