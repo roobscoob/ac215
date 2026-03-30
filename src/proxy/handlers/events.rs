@@ -95,6 +95,14 @@ impl EventsHandler {
 }
 
 impl FrameHandler for EventsHandler {
+    fn reset(&mut self) {
+        self.last_events = None;
+        self.pending.clear();
+        if let Some(ref status) = self.status {
+            status.set("handler.events", "no_status");
+        }
+    }
+
     fn on_frame(
         &mut self,
         _ctx: &mut HandlerContext,

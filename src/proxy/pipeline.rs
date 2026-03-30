@@ -92,6 +92,10 @@ pub trait FrameHandler: Send {
         from: Side,
         frame: &mut Frame,
     ) -> Disposition;
+
+    /// Called when the proxy disconnects and is about to restart a cycle.
+    /// Handlers should clear any cached state from the previous connection.
+    fn reset(&mut self) {}
 }
 
 /// Result of pipeline processing.
@@ -130,6 +134,13 @@ impl Pipeline {
         PipelineResult {
             frame: (handling != FrameHandling::Dropped).then_some(frame),
             extra: ctx.extra,
+        }
+    }
+
+    /// Reset all handlers (called on disconnect).
+    pub fn reset(&mut self) {
+        for handler in &self.handlers {
+            handler.lock().unwrap().reset();
         }
     }
 }

@@ -37,6 +37,13 @@ impl NackHandler {
 }
 
 impl FrameHandler for NackHandler {
+    fn reset(&mut self) {
+        self.last_log = None;
+        if let Some(ref status) = self.status {
+            status.set("handler.nack", "idle");
+        }
+    }
+
     fn on_frame(
         &mut self,
         ctx: &mut HandlerContext,

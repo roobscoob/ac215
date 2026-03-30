@@ -99,6 +99,7 @@ impl Actor for CoordinatorActor {
 
             CoordinatorMsg::Disconnected { side, channel } => {
                 info!("{:?}/{:?} disconnected, shutting down", side, channel);
+                state.pipeline.reset();
                 state.status.set_detail(
                     "coordinator",
                     "stopped",

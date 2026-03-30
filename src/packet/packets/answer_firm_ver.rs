@@ -233,7 +233,10 @@ impl Ac215Packet for AnswerFirmVer825Packet {
         }
     }
 
-    fn from_bytes(_header: &crate::packet::header::Ac215Header, bytes: &[u8]) -> Result<Self, Self::Error> {
+    fn from_bytes(
+        _header: &crate::packet::header::Ac215Header,
+        bytes: &[u8],
+    ) -> Result<Self, Self::Error> {
         let len = bytes.len();
 
         // Minimal response (raw_size 9, payload 10 bytes):
@@ -343,8 +346,8 @@ mod tests {
     use super::*;
     use crate::packet::address::Ac215Address;
     use crate::packet::direction::Ac215PacketDirection;
-    use crate::packet::header::{Ac215Header, Ac215TransactionId};
     use crate::packet::header::EventFlag;
+    use crate::packet::header::{Ac215Header, Ac215TransactionId};
 
     fn dummy_header() -> Ac215Header {
         Ac215Header::new(
@@ -399,7 +402,8 @@ mod tests {
         // Round-trip
         let mut out = [0u8; 468];
         let len = pkt.clone().into_bytes(&mut out);
-        let pkt2 = AnswerFirmVer825Packet::from_bytes(&dummy_header(), &out[..len as usize]).unwrap();
+        let pkt2 =
+            AnswerFirmVer825Packet::from_bytes(&dummy_header(), &out[..len as usize]).unwrap();
         assert_eq!(pkt2.status, FirmwareStatus::Current);
         assert_eq!(pkt2.firmware.as_str(), pkt.firmware.as_str());
         assert_eq!(pkt2.bootloader.as_str(), pkt.bootloader.as_str());

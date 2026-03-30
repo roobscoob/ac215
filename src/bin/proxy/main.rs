@@ -16,7 +16,7 @@ use ac215::packet::header::ChecksumMode;
 use ac215::proxy::Proxy;
 use ac215::proxy::StatusTracker;
 use ac215::proxy::handlers::nack::NackHandler;
-use ac215::proxy::handlers::{EventsHandler, LoggingHandler};
+use ac215::proxy::handlers::{EventsHandler, LoggingHandler, PanelHealthHandler};
 use ac215::proxy::pipeline::FrameHandler;
 
 use config::Config;
@@ -51,7 +51,9 @@ fn main() {
     if args.service {
         // Launched by the SCM — hand off to the service dispatcher.
         // Store the config path so service_main can retrieve it.
-        CONFIG_PATH.set(args.config).expect("config path already set");
+        CONFIG_PATH
+            .set(args.config)
+            .expect("config path already set");
         windows_service::service_dispatcher::start(SERVICE_NAME, ffi_service_main)
             .expect("failed to start service dispatcher");
     } else {
@@ -69,10 +71,7 @@ fn init_posthog_logger(api_key: &str) {
     use opentelemetry_otlp::{LogExporter, WithExportConfig, WithHttpConfig};
 
     let mut headers = std::collections::HashMap::new();
-    headers.insert(
-        "Authorization".to_string(),
-        format!("Bearer {api_key}"),
-    );
+    headers.insert("Authorization".to_string(), format!("Bearer {api_key}"));
 
     let exporter = LogExporter::builder()
         .with_http()
@@ -90,7 +89,9 @@ fn init_posthog_logger(api_key: &str) {
     log::set_max_level(log::LevelFilter::Info);
 
     // Keep the provider alive for the lifetime of the process.
-    LOGGER_PROVIDER.set(provider).expect("logger provider already set");
+    LOGGER_PROVIDER
+        .set(provider)
+        .expect("logger provider already set");
 }
 
 static LOGGER_PROVIDER: std::sync::OnceLock<opentelemetry_sdk::logs::SdkLoggerProvider> =
@@ -216,8 +217,10 @@ async fn run(
     nack_handler_inner.set_status_tracker(status.clone());
     let nack_handler = Arc::new(Mutex::new(nack_handler_inner));
     let logging_handler = Arc::new(Mutex::new(LoggingHandler));
+    let panel_health_handler = Arc::new(Mutex::new(PanelHealthHandler::new(status.clone())));
 
     let handlers: Vec<Arc<Mutex<dyn FrameHandler>>> = vec![
+        panel_health_handler.clone(),
         events_handler.clone(),
         nack_handler.clone(),
         logging_handler.clone(),
