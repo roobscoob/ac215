@@ -56,8 +56,12 @@ pub enum CoordinatorMsg {
         event_flag: EventFlag,
         checksum_mode: ChecksumMode,
     },
-    /// Start buffering server→panel primary frames.
-    BlockServerPrimary,
+    /// Start buffering server→panel primary frames. The oneshot is completed
+    /// once blocking is active **and** all in-flight panel requests have been
+    /// resolved (pending count reaches zero).
+    BlockServerPrimary {
+        ready_tx: oneshot::Sender<()>,
+    },
     /// Flush buffered frames and resume normal flow.
     UnblockServerPrimary,
 }
@@ -75,7 +79,7 @@ impl fmt::Debug for CoordinatorMsg {
             Self::Send { target, channel, .. } => {
                 write!(f, "Send {{ target: {target:?}, channel: {channel:?}, .. }}")
             }
-            Self::BlockServerPrimary => write!(f, "BlockServerPrimary"),
+            Self::BlockServerPrimary { .. } => write!(f, "BlockServerPrimary"),
             Self::UnblockServerPrimary => write!(f, "UnblockServerPrimary"),
         }
     }

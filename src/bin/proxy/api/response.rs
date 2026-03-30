@@ -16,8 +16,10 @@ pub struct ApiResponse {
 #[derive(Serialize)]
 #[serde(tag = "type")]
 pub enum ApiErrorBody {
-    #[serde(rename = "format_exception")]
-    FormatException { message: String },
+    #[serde(rename = "bad_request")]
+    BadRequest { message: String },
+    #[serde(rename = "database_error")]
+    DatabaseError { message: String },
     #[serde(rename = "nack")]
     Nack { associated_logs: Vec<LogPacket> },
     #[serde(rename = "unexpected_packet")]
@@ -54,12 +56,22 @@ impl ApiResponse {
         )
     }
 
-    pub fn format_error(message: String) -> (StatusCode, Json<Self>) {
+    pub fn bad_request(message: String) -> (StatusCode, Json<Self>) {
         (
             StatusCode::BAD_REQUEST,
             Json(Self {
                 ok: false,
-                error: Some(ApiErrorBody::FormatException { message }),
+                error: Some(ApiErrorBody::BadRequest { message }),
+            }),
+        )
+    }
+
+    pub fn database_error(message: String) -> (StatusCode, Json<Self>) {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(Self {
+                ok: false,
+                error: Some(ApiErrorBody::DatabaseError { message }),
             }),
         )
     }

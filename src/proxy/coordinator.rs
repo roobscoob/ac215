@@ -1,7 +1,8 @@
 use std::sync::{Arc, Mutex};
 
-use log::info;
+use log::{info, warn};
 use ractor::{Actor, ActorProcessingErr, ActorRef};
+use tokio::sync::oneshot;
 
 use crate::packet::address::Addressing;
 use crate::packet::direction::Ac215PacketDirection;
@@ -13,6 +14,9 @@ use super::message::{CoordinatorMsg, Side, WriterMsg};
 use super::pipeline::{ExtraPacket, FrameHandler, FrameHandling, Pipeline};
 use super::status::StatusTracker;
 use super::transaction::{ResponseRouting, TransactionRewriter};
+
+/// Pending requests older than this are pruned as stale.
+const PENDING_TIMEOUT_MS: u64 = 10_000;
 
 pub struct CoordinatorActor;
 
@@ -26,6 +30,8 @@ pub struct CoordinatorState {
     /// When true, server→panel primary frames are buffered instead of forwarded.
     server_primary_blocked: bool,
     server_primary_buffer: Vec<Frame>,
+    /// Completed when blocking is active and all in-flight requests have resolved.
+    block_ready_tx: Option<oneshot::Sender<()>>,
     status: StatusTracker,
 }
 
@@ -82,6 +88,7 @@ impl Actor for CoordinatorActor {
             rewriter: TransactionRewriter::new(),
             server_primary_blocked: false,
             server_primary_buffer: Vec::new(),
+            block_ready_tx: None,
             status: args.status,
         })
     }
@@ -120,11 +127,22 @@ impl Actor for CoordinatorActor {
                 response_tx,
             } => {
                 // Impostor: proxy pretending to be the server.
-                let mut frame = build_frame(addressing, command_id, data, event_flag, checksum_mode, Channel::Primary);
-                let header = state.rewriter.inject_to_panel(frame.header().clone(), response_tx);
+                let mut frame = build_frame(
+                    addressing,
+                    command_id,
+                    data,
+                    event_flag,
+                    checksum_mode,
+                    Channel::Primary,
+                );
+                let header = state
+                    .rewriter
+                    .inject_to_panel(frame.header().clone(), response_tx);
                 *frame.header_mut() = header;
 
-                let result = state.pipeline.process(FrameHandling::Impostor, Side::Server, frame);
+                let result = state
+                    .pipeline
+                    .process(FrameHandling::Impostor, Side::Server, frame);
                 send_extras(result.extra, state);
                 if let Some(frame) = result.frame {
                     state.send_frame(Side::Panel, frame);
@@ -140,21 +158,36 @@ impl Actor for CoordinatorActor {
                 event_flag,
                 checksum_mode,
             } => {
-                let frame = build_frame(addressing, command_id, data, event_flag, checksum_mode, channel);
-                let result = state.pipeline.process(FrameHandling::Impostor, target, frame);
+                let frame = build_frame(
+                    addressing,
+                    command_id,
+                    data,
+                    event_flag,
+                    checksum_mode,
+                    channel,
+                );
+                let result = state
+                    .pipeline
+                    .process(FrameHandling::Impostor, target, frame);
                 send_extras(result.extra, state);
                 if let Some(frame) = result.frame {
                     state.send_frame(target, frame);
                 }
             }
 
-            CoordinatorMsg::BlockServerPrimary => {
+            CoordinatorMsg::BlockServerPrimary { ready_tx } => {
                 state.server_primary_blocked = true;
+                if state.rewriter.pending_count() == 0 {
+                    let _ = ready_tx.send(());
+                } else {
+                    state.block_ready_tx = Some(ready_tx);
+                }
                 state.status.set_detail(
                     "coordinator",
                     "blocking",
                     serde_json::json!({
                         "pending_requests": state.rewriter.pending_count(),
+                        "pending": state.rewriter.pending_summary(),
                         "buffered_frames": state.server_primary_buffer.len(),
                     }),
                 );
@@ -171,6 +204,7 @@ impl Actor for CoordinatorActor {
                     "tracking",
                     serde_json::json!({
                         "pending_requests": state.rewriter.pending_count(),
+                        "pending": state.rewriter.pending_summary(),
                     }),
                 );
             }
@@ -223,7 +257,9 @@ fn send_extras(extras: Vec<ExtraPacket>, state: &mut CoordinatorState) {
             extra.checksum_mode,
             extra.channel,
         );
-        let result = state.pipeline.process(FrameHandling::Impostor, target, frame);
+        let result = state
+            .pipeline
+            .process(FrameHandling::Impostor, target, frame);
         // Recurse for any extras produced by this extra.
         send_extras(result.extra, state);
         if let Some(frame) = result.frame {
@@ -238,7 +274,9 @@ fn handle_frame(from: Side, frame: Frame, state: &mut CoordinatorState) {
 
     // Server→Panel on Primary: goes through the rewriter.
     if from == Side::Server && channel == Channel::Primary {
-        let result = state.pipeline.process(FrameHandling::Passthrough, from, frame);
+        let result = state
+            .pipeline
+            .process(FrameHandling::Passthrough, from, frame);
         send_extras(result.extra, state);
         if let Some(frame) = result.frame {
             if state.server_primary_blocked {
@@ -256,7 +294,9 @@ fn handle_frame(from: Side, frame: Frame, state: &mut CoordinatorState) {
         match state.rewriter.resolve_response(frame) {
             ResponseRouting::ToServer(frame) => {
                 // Passthrough: server sent the request, panel responded.
-                let result = state.pipeline.process(FrameHandling::Passthrough, from, frame);
+                let result = state
+                    .pipeline
+                    .process(FrameHandling::Passthrough, from, frame);
                 send_extras(result.extra, state);
                 if let Some(frame) = result.frame {
                     state.send_frame(Side::Server, frame);
@@ -265,7 +305,9 @@ fn handle_frame(from: Side, frame: Frame, state: &mut CoordinatorState) {
             ResponseRouting::ToProxy(frame, tx) => {
                 // Intercepted: proxy sent the request, consuming the response.
                 // Run through pipeline for logging, then deliver via oneshot.
-                let result = state.pipeline.process(FrameHandling::Intercepted, from, frame);
+                let result = state
+                    .pipeline
+                    .process(FrameHandling::Intercepted, from, frame);
                 send_extras(result.extra, state);
                 if let Some(frame) = result.frame {
                     let _ = tx.send(frame);
@@ -273,18 +315,63 @@ fn handle_frame(from: Side, frame: Frame, state: &mut CoordinatorState) {
             }
             ResponseRouting::Unknown(frame) => {
                 // No mapping — pass through as normal.
-                let result = state.pipeline.process(FrameHandling::Passthrough, from, frame);
+                let result = state
+                    .pipeline
+                    .process(FrameHandling::Passthrough, from, frame);
                 send_extras(result.extra, state);
                 if let Some(frame) = result.frame {
                     state.send_frame(Side::Server, frame);
                 }
             }
         }
+
+        // Evict pending entries that the panel never responded to.
+        let stale = state.rewriter.prune_stale(PENDING_TIMEOUT_MS);
+        for entry in &stale {
+            warn!(
+                "pruned stale pending request: command=0x{:02X} ({}) origin={} sent_at={}",
+                entry.command_id,
+                entry.command_name.unwrap_or("unknown"),
+                entry.origin,
+                entry.sent_at,
+            );
+        }
+
+        if state.server_primary_blocked {
+            // Check if all in-flight requests have drained.
+            if state.rewriter.pending_count() == 0 {
+                if let Some(tx) = state.block_ready_tx.take() {
+                    let _ = tx.send(());
+                }
+            }
+            state.status.set_detail(
+                "coordinator",
+                "blocking",
+                serde_json::json!({
+                    "pending_requests": state.rewriter.pending_count(),
+                    "pending": state.rewriter.pending_summary(),
+                    "buffered_frames": state.server_primary_buffer.len(),
+                }),
+            );
+        } else {
+            state.status.set_detail(
+                "coordinator",
+                "tracking",
+                serde_json::json!({
+                    "pending_requests": state.rewriter.pending_count(),
+                    "pending": state.rewriter.pending_summary(),
+                }),
+            );
+        }
+
         return;
     }
 
-    // Everything else (async channel): pass through pipeline, no rewriting.
-    let result = state.pipeline.process(FrameHandling::Passthrough, from, frame);
+    // Panel→Server on Async: pass through pipeline, no rewriting.
+    let result = state
+        .pipeline
+        .process(FrameHandling::Passthrough, from, frame);
+
     send_extras(result.extra, state);
     if let Some(frame) = result.frame {
         state.send_frame(from.opposite(), frame);
@@ -292,13 +379,28 @@ fn handle_frame(from: Side, frame: Frame, state: &mut CoordinatorState) {
 }
 
 /// Rewrite a server request's transaction ID and send it to the panel.
+/// Primary-channel packets that are sent without expecting a response.
+fn is_fire_and_forget(command_id: u8) -> bool {
+    matches!(
+        command_id, 0xD1 // KeepAliveAck
+    )
+}
+
 fn forward_to_panel(frame: Frame, state: &mut CoordinatorState) {
-    let was_tracking = state.rewriter.is_tracking();
+    let track =
+        frame.channel() == Channel::Primary && !is_fire_and_forget(frame.header().command_id());
     let (header, payload, channel) = frame.into_parts();
-    let header = state.rewriter.forward_to_panel(header);
+    let header = state.rewriter.forward_to_panel(header, track);
     state.send_frame(Side::Panel, Frame::new(header, payload, channel));
 
-    if !was_tracking && state.rewriter.is_tracking() {
-        state.status.set("coordinator", "tracking");
+    if !state.server_primary_blocked {
+        state.status.set_detail(
+            "coordinator",
+            "tracking",
+            serde_json::json!({
+                "pending_requests": state.rewriter.pending_count(),
+                "pending": state.rewriter.pending_summary(),
+            }),
+        );
     }
 }

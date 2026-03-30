@@ -1,6 +1,7 @@
 mod credentials;
 mod outputs;
 pub mod response;
+mod simulate;
 mod status;
 pub mod webhooks;
 
@@ -74,6 +75,7 @@ pub async fn serve(addr: SocketAddr, state: AppState) {
         )
         .route("/v1/cards/{id}/assign", post(credentials::assign_card))
         .route("/v1/cards/{id}/unassign", post(credentials::unassign_card))
+        .route("/v1/cards/{id}/simulate", post(simulate::simulate_card))
         .layer(middleware::from_fn_with_state(state.clone(), require_running));
 
     // Ungated routes — always available.

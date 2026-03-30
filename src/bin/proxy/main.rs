@@ -1,6 +1,9 @@
 mod api;
 mod config;
+mod custom_event;
 mod db;
+pub mod event_emitter;
+mod event_rewriter;
 mod local_db;
 
 use std::ffi::OsString;
@@ -208,8 +211,9 @@ async fn run(
     }
     {
         let ldb = local_db.clone();
+        let db = db.clone();
         events_handler_inner.on_access(move |event| {
-            api::webhooks::events::on_access(&ldb, event);
+            api::webhooks::events::on_access(&ldb, &db, event);
         });
     }
     let events_handler = Arc::new(Mutex::new(events_handler_inner));

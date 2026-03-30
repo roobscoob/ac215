@@ -689,6 +689,11 @@ pub async fn create_card(
         return err;
     }
 
+    // Validate card_code is a valid integer.
+    if req.card_code.parse::<i64>().is_err() {
+        return error_json(StatusCode::BAD_REQUEST, "card_code must be a valid integer");
+    }
+
     // Check for duplicate (site_code, card_code).
     let dup = match query_exists(
         &mut db,

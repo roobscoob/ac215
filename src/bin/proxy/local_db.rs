@@ -47,6 +47,15 @@ impl LocalDb {
                 original_ip3  INTEGER NOT NULL,
                 original_ip4  INTEGER NOT NULL,
                 original_port INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS custom_events (
+                base_event_id  INTEGER PRIMARY KEY,
+                event_type     INTEGER NOT NULL,
+                event_subtype  INTEGER NOT NULL,
+                location       INTEGER NOT NULL,
+                event_data     BLOB NOT NULL,
+                timestamp      BLOB
             );",
         )?;
         Ok(Self {
@@ -180,5 +189,87 @@ impl LocalDb {
             params![network_id],
         )?;
         Ok(())
+    }
+
+    // ── Custom event operations ──────────────────────────────────────────
+
+    /// Store a custom event overlay keyed by the panel's base event ID.
+    pub fn save_custom_event(
+        &self,
+        base_event_id: u32,
+        event: &crate::custom_event::CustomEvent,
+    ) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        let ts_blob: Option<Vec<u8>> = event.timestamp.as_ref().map(|ts| ts.encode().to_vec());
+        conn.execute(
+            "INSERT OR REPLACE INTO custom_events
+                (base_event_id, event_type, event_subtype, location, event_data, timestamp)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                base_event_id,
+                event.event_type.type_id(),
+                event.event_type.subtype_id(),
+                event.location.to_byte(),
+                &event.event_data[..],
+                ts_blob,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Look up a custom event by base event ID.
+    pub fn get_custom_event(
+        &self,
+        base_event_id: u32,
+    ) -> Result<Option<crate::custom_event::CustomEvent>, rusqlite::Error> {
+        use ac215::event::event_type::EventType;
+        use ac215::event::location::EventLocation;
+        use ac215::event::timestamp::PackedTimestamp;
+
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT event_type, event_subtype, location, event_data, timestamp
+             FROM custom_events WHERE base_event_id = ?1",
+        )?;
+        let mut rows = stmt.query_map(params![base_event_id], |row| {
+            let type_id: u8 = row.get(0)?;
+            let subtype_id: u8 = row.get(1)?;
+            let location_byte: u8 = row.get(2)?;
+            let data_blob: Vec<u8> = row.get(3)?;
+            let ts_blob: Option<Vec<u8>> = row.get(4)?;
+            Ok((type_id, subtype_id, location_byte, data_blob, ts_blob))
+        })?;
+        match rows.next() {
+            Some(Ok((type_id, subtype_id, location_byte, data_blob, ts_blob))) => {
+                let mut event_data = [0u8; 25];
+                let len = data_blob.len().min(25);
+                event_data[..len].copy_from_slice(&data_blob[..len]);
+                let timestamp = ts_blob.and_then(|b| {
+                    if b.len() == 5 {
+                        Some(PackedTimestamp::decode(b.as_slice().try_into().unwrap()))
+                    } else {
+                        None
+                    }
+                });
+                Ok(Some(crate::custom_event::CustomEvent {
+                    event_type: EventType::new(type_id, subtype_id),
+                    location: EventLocation::from_byte(location_byte),
+                    timestamp,
+                    event_data,
+                }))
+            }
+            Some(Err(e)) => Err(e),
+            None => Ok(None),
+        }
+    }
+
+    /// Delete a custom event by base event ID.
+    pub fn delete_custom_event(&self, base_event_id: u32) -> Result<bool, rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        let affected = conn.execute(
+            "DELETE FROM custom_events WHERE base_event_id = ?1",
+            params![base_event_id],
+        )?;
+        Ok(affected > 0)
     }
 }

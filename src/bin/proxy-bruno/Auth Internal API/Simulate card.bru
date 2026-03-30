@@ -1,0 +1,25 @@
+meta {
+  name: Simulate card
+  type: http
+  seq: 25
+}
+
+post {
+  url: http://{{HOSTNAME}}:8181/v1/cards/1/simulate
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "reader": 5,
+    "outputs": [
+      { "output_id": 0, "duration": 3 }
+    ]
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

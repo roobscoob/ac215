@@ -92,7 +92,7 @@ impl InterceptorHandle {
     /// (also under a block) if the proxy resets before `execute` completes.
     pub async fn run_transaction<T: Transaction>(&self, txn: &mut T) -> T::Result {
         let _guard = self.transaction_lock.lock().await;
-        self.block_server_primary();
+        self.block_server_primary().await;
         let result = txn.execute(self).await;
         self.unblock_server_primary();
         result
@@ -144,11 +144,14 @@ impl InterceptorHandle {
         });
     }
 
-    /// Start buffering server→panel primary frames.
-    pub fn block_server_primary(&self) {
+    /// Start buffering server→panel primary frames. Returns once blocking is
+    /// active and all in-flight panel requests have been resolved.
+    pub async fn block_server_primary(&self) {
+        let (tx, rx) = oneshot::channel();
         let _ = self
             .coordinator()
-            .send_message(CoordinatorMsg::BlockServerPrimary);
+            .send_message(CoordinatorMsg::BlockServerPrimary { ready_tx: tx });
+        rx.await.expect("coordinator dropped before block ready");
     }
 
     /// Flush buffered server→panel primary frames and resume normal flow.

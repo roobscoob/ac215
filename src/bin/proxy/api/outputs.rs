@@ -77,14 +77,14 @@ pub async fn post_outputs(
 
     for op in &req.operations {
         if op.output_id >= 32 {
-            return ApiResponse::format_error(format!(
+            return ApiResponse::bad_request(format!(
                 "output_id {} out of range (0-31)",
                 op.output_id
             ));
         }
 
         if op.duration > 3599 {
-            return ApiResponse::format_error(format!(
+            return ApiResponse::bad_request(format!(
                 "duration {} exceeds maximum (3599s, 59m 59s)",
                 op.duration
             ));
@@ -95,7 +95,7 @@ pub async fn post_outputs(
             "open" => OutputOperationType::OpenPermanently,
             "close" => OutputOperationType::CloseAndReturnToDefault,
             other => {
-                return ApiResponse::format_error(format!("unknown operation: {other}"));
+                return ApiResponse::bad_request(format!("unknown operation: {other}"));
             }
         };
 

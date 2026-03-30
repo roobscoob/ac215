@@ -661,6 +661,66 @@ paths:
         "409":
           description: Card is not currently assigned.
 
+  /v1/cards/{id}/simulate:
+    post:
+      summary: Simulate a card swipe
+      description: >
+        Simulate a card being swiped at a reader. The card must exist and be
+        assigned to an employee. Fires a ManualOutput pulse followed by an
+        EventEmitter transaction that rewrites the resulting panel event into
+        an ACCESS_GRANTED event with the card's credentials. The server sees
+        an event indistinguishable from a real card swipe.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Card ID.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reader, outputs]
+              properties:
+                reader:
+                  type: integer
+                  description: Reader index (0-9).
+                outputs:
+                  type: array
+                  description: Output relays to pulse as part of the simulation.
+                  items:
+                    type: object
+                    required: [output_id]
+                    properties:
+                      output_id:
+                        type: integer
+                        description: Output relay index (0-31).
+                      duration:
+                        type: integer
+                        default: 1
+                        description: Pulse duration in seconds (max 3599).
+            examples:
+              door_0:
+                value:
+                  reader: 0
+                  outputs:
+                    - output_id: 0
+                      duration: 3
+      responses:
+        "200":
+          description: Card swipe simulated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "400":
+          description: Card not found, not assigned, invalid reader, or invalid outputs.
+        "502":
+          description: Panel rejected the operation (NACK).
+
   /v1/webhooks/{id}:
     delete:
       summary: Remove a webhook
